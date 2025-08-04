@@ -1,0 +1,41 @@
+# LLM Configuration
+llm:
+  development:
+    provider: "gemini"
+    model: "gemini-2.5-flash"
+    temperature: 0.1
+    max_tokens: 4096
+  
+  production:
+    provider: "gemini"
+    model: "gemini-2.5-flash"
+    temperature: 0.1
+    max_tokens: 4096
+
+# API Configuration
+apis:
+  arxiv:
+    base_url: "http://export.arxiv.org/api/query"
+    max_results: 100
+    delay: 3  # seconds between requests
+  
+  semantic_scholar:
+    base_url: "https://api.semanticscholar.org/graph/v1"
+    rate_limit: 100  # requests per second
+  
+  crossref:
+    base_url: "https://api.crossref.org/works"
+    mailto: "your-email@example.com"
+
+# Storage Configuration
+storage:
+  database_path: "data/research.db"
+  papers_dir: "data/papers"
+  cache_dir: "data/cache"
+  outputs_dir: "data/outputs"
+
+# Agent Configuration
+agents:
+  max_retries: 3
+  timeout: 300  # seconds
+  verbose: true
