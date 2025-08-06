@@ -1,1 +1,12 @@
-.env 
+__pycache__/ 
+*.py[cod] 
+env/ 
+*.db 
+*.sqlite3 
+logs/ 
+*.log 
+data/outputs/ 
+data/backup_*.db 
+.DS_Store 
+Thumbs.db 
+.ipynb_checkpoints/ 
