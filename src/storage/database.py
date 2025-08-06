@@ -10,6 +10,8 @@ class DatabaseManager:
     def __init__(self, db_path: Optional[str] = None):
         self.db_path = db_path or config.get('storage.database_path', 'data/research.db')
         self.db = sqlite_utils.Database(self.db_path)
+        # Keep track of column names for each table - initialize BEFORE _initialize_tables()
+        self._column_cache = {}
         self._initialize_tables()
     
     def _initialize_tables(self):
@@ -70,19 +72,45 @@ class DatabaseManager:
             CREATE INDEX IF NOT EXISTS idx_themes_frequency ON research_themes(frequency);
         """)
         
+        # Cache column names for each table
+        self._cache_column_names()
         logger.info(f"Database initialized at: {self.db_path}")
     
-    def _row_to_dict(self, row) -> Dict[str, Any]:
+    def _cache_column_names(self):
+        """Cache column names for each table to handle raw tuple/list rows"""
+        tables = ['papers', 'research_notes', 'research_themes', 'citations']
+        for table_name in tables:
+            try:
+                # Get column information
+                cursor = self.db.execute(f"PRAGMA table_info({table_name})")
+                columns = [row[1] for row in cursor.fetchall()]  # Column names are in index 1
+                self._column_cache[table_name] = columns
+                logger.debug(f"Cached columns for {table_name}: {columns}")
+            except Exception as e:
+                logger.error(f"Error caching columns for {table_name}: {e}")
+                self._column_cache[table_name] = []
+    
+    def _row_to_dict(self, row, table_name: str = None) -> Dict[str, Any]:
         """Safely convert a database row to dictionary"""
         try:
-            if hasattr(row, 'keys'):
+            if hasattr(row, 'keys') and hasattr(row, '__getitem__'):
                 # sqlite_utils Row object or sqlite3.Row
                 return {key: row[key] for key in row.keys()}
             elif isinstance(row, dict):
                 return row
+            elif isinstance(row, (list, tuple)) and table_name:
+                # Handle raw tuple/list rows using cached column names
+                columns = self._column_cache.get(table_name, [])
+                if len(columns) == len(row):
+                    result = dict(zip(columns, row))
+                    logger.debug(f"Converted raw {type(row).__name__} to dict for {table_name}")
+                    return result
+                else:
+                    logger.warning(f"Column count mismatch for {table_name}: expected {len(columns)}, got {len(row)}")
+                    return {}
             elif isinstance(row, (list, tuple)):
-                # Handle raw tuple/list rows - this shouldn't happen with sqlite_utils
-                logger.warning("Received raw tuple/list row - this indicates a database issue")
+                # Raw tuple/list without table context - can't convert safely
+                logger.warning("Received raw tuple/list row without table context - cannot convert")
                 return {}
             else:
                 logger.warning(f"Unknown row type: {type(row)}")
@@ -90,6 +118,42 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Error converting row to dict: {e}")
             return {}
+    
+    def _safe_create_paper(self, row_dict: Dict[str, Any]) -> Optional[Paper]:
+        """Safely create Paper object from database row with enhanced error handling"""
+        try:
+            if not row_dict:
+                return None
+                
+            # Ensure all required fields are present with defaults
+            safe_dict = {
+                'id': str(row_dict.get('id', '')),
+                'title': str(row_dict.get('title', 'Untitled')),
+                'authors': row_dict.get('authors', []),
+                'abstract': str(row_dict.get('abstract', '')),
+                'url': str(row_dict.get('url', '')),
+                'published_date': row_dict.get('published_date'),
+                'venue': row_dict.get('venue'),
+                'citations': int(row_dict.get('citations', 0)),
+                'pdf_path': row_dict.get('pdf_path'),
+                'full_text': row_dict.get('full_text'),
+                'keywords': row_dict.get('keywords', []),
+                'doi': row_dict.get('doi'),
+                'arxiv_id': row_dict.get('arxiv_id'),
+                'created_at': row_dict.get('created_at')  # This field now exists in Paper model
+            }
+            
+            # Skip papers with empty or invalid IDs
+            if not safe_dict['id'] or safe_dict['id'] == 'None':
+                logger.warning("Skipping paper with invalid ID")
+                return None
+                
+            return Paper.from_dict(safe_dict)
+            
+        except Exception as e:
+            logger.error(f"Error creating Paper object: {e}")
+            logger.debug(f"Problematic row_dict: {row_dict}")
+            return None
     
     # Paper operations
     def save_paper(self, paper: Paper) -> bool:
@@ -104,17 +168,21 @@ class DatabaseManager:
     def get_paper(self, paper_id: str) -> Optional[Paper]:
         """Get a paper by ID"""
         try:
-            row = self.db['papers'].get(paper_id)
-            if row:
-                row_dict = self._row_to_dict(row)
-                return Paper.from_dict(row_dict)
-            return None
+            # Use sqlite_utils table interface
+            try:
+                row = self.db['papers'].get(paper_id)
+                if row:
+                    row_dict = self._row_to_dict(row, 'papers')
+                    return self._safe_create_paper(row_dict)
+            except sqlite_utils.db.NotFoundError:
+                return None
+                
         except Exception as e:
             logger.error(f"Error getting paper {paper_id}: {e}")
             return None
     
     def search_papers(self, query: str, limit: int = 50, sort_by: str = 'relevance') -> List[Paper]:
-        """Search papers by title or abstract with sorting"""
+        """Search papers by title or abstract with sorting and enhanced error handling"""
         try:
             # Build ORDER BY clause based on sort_by parameter
             if sort_by == 'date':
@@ -130,20 +198,25 @@ class DatabaseManager:
                 {order_clause}
                 LIMIT ?
             """
-            rows = self.db.execute(sql, [f"%{query}%", f"%{query}%", limit]).fetchall()
+            
+            # Use raw SQL execution to get consistent results
+            cursor = self.db.execute(sql, [f"%{query}%", f"%{query}%", limit])
+            rows = cursor.fetchall()
             
             papers = []
             for row in rows:
                 try:
-                    # Convert row to dict properly
-                    row_dict = self._row_to_dict(row)
+                    # Convert row to dict with table context
+                    row_dict = self._row_to_dict(row, 'papers')
                     if row_dict:  # Only proceed if conversion was successful
-                        paper = Paper.from_dict(row_dict)
-                        papers.append(paper)
+                        paper = self._safe_create_paper(row_dict)
+                        if paper:  # Only add if paper creation was successful
+                            papers.append(paper)
                 except Exception as e:
-                    logger.warning(f"Error converting row to paper: {e}")
+                    logger.warning(f"Error processing paper row: {e}")
                     continue
             
+            logger.info(f"Found {len(papers)} papers for query: '{query}'")
             return papers
             
         except Exception as e:
@@ -151,18 +224,25 @@ class DatabaseManager:
             return []
     
     def get_all_papers(self) -> List[Paper]:
-        """Get all papers"""
+        """Get all papers with enhanced error handling"""
         try:
             papers = []
-            for row in self.db['papers'].rows:
+            # Use raw SQL for consistency
+            cursor = self.db.execute("SELECT * FROM papers ORDER BY created_at DESC")
+            rows = cursor.fetchall()
+            
+            for row in rows:
                 try:
-                    row_dict = self._row_to_dict(row)
+                    row_dict = self._row_to_dict(row, 'papers')
                     if row_dict:
-                        paper = Paper.from_dict(row_dict)
-                        papers.append(paper)
+                        paper = self._safe_create_paper(row_dict)
+                        if paper:
+                            papers.append(paper)
                 except Exception as e:
-                    logger.warning(f"Error converting paper row: {e}")
+                    logger.warning(f"Error processing paper row: {e}")
                     continue
+                    
+            logger.info(f"Retrieved {len(papers)} papers")
             return papers
         except Exception as e:
             logger.error(f"Error getting all papers: {e}")
@@ -181,15 +261,16 @@ class DatabaseManager:
     def get_notes_for_paper(self, paper_id: str) -> List[ResearchNote]:
         """Get all notes for a specific paper"""
         try:
-            rows = self.db.execute(
+            cursor = self.db.execute(
                 "SELECT * FROM research_notes WHERE paper_id = ?", 
                 [paper_id]
-            ).fetchall()
+            )
+            rows = cursor.fetchall()
             
             notes = []
             for row in rows:
                 try:
-                    row_dict = self._row_to_dict(row)
+                    row_dict = self._row_to_dict(row, 'research_notes')
                     if row_dict:
                         note = ResearchNote(**row_dict)
                         notes.append(note)
@@ -222,12 +303,13 @@ class DatabaseManager:
                 sql += " LIMIT ?"
                 params.append(limit)
             
-            rows = self.db.execute(sql, params).fetchall()
+            cursor = self.db.execute(sql, params)
+            rows = cursor.fetchall()
             
             themes = []
             for row in rows:
                 try:
-                    row_dict = self._row_to_dict(row)
+                    row_dict = self._row_to_dict(row, 'research_themes')
                     if row_dict:
                         theme = ResearchTheme(**row_dict)
                         themes.append(theme)
@@ -235,6 +317,7 @@ class DatabaseManager:
                     logger.warning(f"Error creating theme from row: {e}")
                     continue
             
+            logger.info(f"Retrieved {len(themes)} themes")
             return themes
             
         except Exception as e:
@@ -254,13 +337,14 @@ class DatabaseManager:
     def get_citation(self, paper_id: str) -> Optional[Citation]:
         """Get citation for a paper"""
         try:
-            row = self.db.execute(
+            cursor = self.db.execute(
                 "SELECT * FROM citations WHERE paper_id = ?", 
                 [paper_id]
-            ).fetchone()
+            )
+            row = cursor.fetchone()
             
             if row:
-                row_dict = self._row_to_dict(row)
+                row_dict = self._row_to_dict(row, 'citations')
                 if row_dict:
                     return Citation(**row_dict)
             return None
@@ -272,15 +356,61 @@ class DatabaseManager:
     def get_stats(self) -> Dict[str, int]:
         """Get database statistics"""
         try:
-            return {
-                'papers': self.db['papers'].count,
-                'notes': self.db['research_notes'].count,
-                'themes': self.db['research_themes'].count,
-                'citations': self.db['citations'].count
-            }
+            stats = {}
+            tables = ['papers', 'research_notes', 'research_themes', 'citations']
+            
+            for table in tables:
+                try:
+                    cursor = self.db.execute(f"SELECT COUNT(*) FROM {table}")
+                    count = cursor.fetchone()[0]
+                    stats[table.replace('research_', '')] = count
+                except Exception as e:
+                    logger.error(f"Error getting count for {table}: {e}")
+                    stats[table.replace('research_', '')] = 0
+                    
+            return stats
+            
         except Exception as e:
             logger.error(f"Error getting stats: {e}")
             return {}
+    
+    def diagnose_data_issues(self):
+        """Diagnose and log data issues for debugging"""
+        try:
+            logger.info("Running database diagnostics...")
+            
+            # Check papers table
+            cursor = self.db.execute("SELECT COUNT(*) FROM papers")
+            paper_count = cursor.fetchone()[0]
+            logger.info(f"Total papers in database: {paper_count}")
+            
+            if paper_count > 0:
+                # Sample a few papers to check for issues
+                cursor = self.db.execute("SELECT * FROM papers LIMIT 5")
+                sample_rows = cursor.fetchall()
+                
+                valid_papers = 0
+                for i, row in enumerate(sample_rows):
+                    try:
+                        row_dict = self._row_to_dict(row, 'papers')
+                        paper = self._safe_create_paper(row_dict)
+                        if paper:
+                            valid_papers += 1
+                            logger.info(f"Sample paper {i+1}: {paper.title[:50]}...")
+                        else:
+                            logger.warning(f"Sample paper {i+1}: Failed to create Paper object")
+                    except Exception as e:
+                        logger.error(f"Sample paper {i+1}: Error - {e}")
+                
+                logger.info(f"Valid papers in sample: {valid_papers}/{len(sample_rows)}")
+            
+            # Check column structure
+            cursor = self.db.execute("PRAGMA table_info(papers)")
+            columns = cursor.fetchall()
+            logger.info(f"Papers table columns: {[col[1] for col in columns]}")
+            
+        except Exception as e:
+            logger.error(f"Error during diagnostics: {e}")
     
     def clear_corrupted_data(self):
         """Clear potentially corrupted data - use with caution"""
@@ -292,16 +422,24 @@ class DatabaseManager:
             tables = ['papers', 'research_notes', 'research_themes', 'citations']
             for table_name in tables:
                 try:
-                    rows = list(self.db[table_name].rows)
+                    cursor = self.db.execute(f"SELECT * FROM {table_name}")
+                    rows = cursor.fetchall()
                     clean_rows = []
                     corrupted_count = 0
                     
                     for row in rows:
                         try:
                             # Try to convert each row
-                            row_dict = self._row_to_dict(row)
+                            row_dict = self._row_to_dict(row, table_name)
                             if row_dict:
-                                clean_rows.append(row_dict)
+                                if table_name == 'papers':
+                                    paper = self._safe_create_paper(row_dict)
+                                    if paper:
+                                        clean_rows.append(row_dict)
+                                    else:
+                                        corrupted_count += 1
+                                else:
+                                    clean_rows.append(row_dict)
                             else:
                                 corrupted_count += 1
                         except Exception:
@@ -309,12 +447,43 @@ class DatabaseManager:
                     
                     if corrupted_count > 0:
                         logger.warning(f"Found {corrupted_count} corrupted rows in {table_name}")
+                    else:
+                        logger.info(f"Table {table_name} is clean ({len(clean_rows)} rows)")
                         
                 except Exception as e:
                     logger.error(f"Error checking table {table_name}: {e}")
                     
         except Exception as e:
             logger.error(f"Error during corruption check: {e}")
+    
+    def test_data_retrieval(self):
+        """Test data retrieval to diagnose issues"""
+        logger.info("Testing data retrieval...")
+        
+        try:
+            # Run diagnostics first
+            self.diagnose_data_issues()
+            
+            # Test raw counts
+            stats = self.get_stats()
+            logger.info(f"Database stats: {stats}")
+            
+            # Test themes retrieval
+            themes = self.get_themes(min_frequency=0)  # Get all themes
+            logger.info(f"Retrieved {len(themes)} themes")
+            
+            if themes:
+                logger.info(f"Sample theme: {themes[0].title}")
+            
+            # Test papers search
+            papers = self.search_papers("quantum", limit=5)
+            logger.info(f"Found {len(papers)} papers for 'quantum' search")
+            
+            if papers:
+                logger.info(f"Sample paper: {papers[0].title}")
+                
+        except Exception as e:
+            logger.error(f"Error during data retrieval test: {e}")
 
 # Global database instance
 db = DatabaseManager()

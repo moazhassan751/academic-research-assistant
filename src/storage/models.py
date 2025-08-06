@@ -19,6 +19,7 @@ class Paper:
     keywords: List[str] = field(default_factory=list)
     doi: Optional[str] = None
     arxiv_id: Optional[str] = None
+    created_at: Optional[datetime] = None  # Add this field to match database schema
     
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -34,7 +35,8 @@ class Paper:
             'full_text': self.full_text,
             'keywords': json.dumps(self.keywords) if self.keywords else json.dumps([]),
             'doi': self.doi,
-            'arxiv_id': self.arxiv_id
+            'arxiv_id': self.arxiv_id,
+            'created_at': self.created_at.isoformat() if self.created_at else None
         }
     
     @classmethod
@@ -48,6 +50,14 @@ class Paper:
                 data_copy['published_date'] = datetime.fromisoformat(data_copy['published_date'])
             except (ValueError, TypeError):
                 data_copy['published_date'] = None
+        
+        # Handle created_at field from database
+        if data_copy.get('created_at'):
+            try:
+                if isinstance(data_copy['created_at'], str):
+                    data_copy['created_at'] = datetime.fromisoformat(data_copy['created_at'])
+            except (ValueError, TypeError):
+                data_copy['created_at'] = None
         
         # Handle authors JSON
         if data_copy.get('authors'):
@@ -79,7 +89,15 @@ class Paper:
         data_copy.setdefault('url', '')
         data_copy.setdefault('citations', 0)
         
-        return cls(**data_copy)
+        # Remove any unexpected fields that might cause issues
+        expected_fields = {
+            'id', 'title', 'authors', 'abstract', 'url', 'published_date', 
+            'venue', 'citations', 'pdf_path', 'full_text', 'keywords', 
+            'doi', 'arxiv_id', 'created_at'
+        }
+        filtered_data = {k: v for k, v in data_copy.items() if k in expected_fields}
+        
+        return cls(**filtered_data)
 
 @dataclass
 class ResearchNote:
@@ -90,7 +108,17 @@ class ResearchNote:
     note_type: str  # 'key_finding', 'methodology', 'limitation', 'future_work'
     confidence: float = 0.0
     page_number: Optional[int] = None
-    created_at: datetime = field(default_factory=datetime.now)
+    created_at: Optional[datetime] = None  # Make this Optional to handle database values
+    
+    def __post_init__(self):
+        """Handle datetime conversion from database strings"""
+        if isinstance(self.created_at, str):
+            try:
+                self.created_at = datetime.fromisoformat(self.created_at)
+            except (ValueError, TypeError):
+                self.created_at = datetime.now()
+        elif self.created_at is None:
+            self.created_at = datetime.now()
     
     def to_dict(self) -> Dict[str, Any]:
         return {
