@@ -1,5 +1,0 @@
-- Natural Language Processing using Hadoop and KOSHIK (2016)
-- Integrating AI Planning with Natural Language Processing: A Combination of Explicit and Tacit Knowledge (2022)
-- Simple Natural Language Processing Tools for Danish (2019)
-- Natural Language Generation (2025)
-- NLI4DB: A Systematic Review of Natural Language Interfaces for Databases (2025)

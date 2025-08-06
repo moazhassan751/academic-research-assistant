@@ -1,7 +1,0 @@
-Muhammed Ugur, Raghavendra Pradyumna Pothukuchi, & Abhishek Bhattacharjee (2024). The Interplay of Computing, Ethics, and Policy in Brain-Computer Interface Design. *arXiv*. http://arxiv.org/abs/2409.17445v1
-
-Renee Sirbu, Jessica Morley, Tyler Schroder, Raghavendra Pradyumna Pothukuchi, Muhammed Ugur, Abhishek Bhattacharjee, & Luciano Floridi (2025). Regulating Next-Generation Implantable Brain-Computer Interfaces: Recommendations for Ethical Development and Implementation. *arXiv*. http://arxiv.org/abs/2506.12540v2
-
-Sergio López Bernal, Mario Quiles Pérez, Enrique Tomás Martínez Beltrán, Gregorio Martínez Pérez, & Alberto Huertas Celdrán (2022). When Brain-Computer Interfaces Meet the Metaverse: Landscape, Demonstrator, Trends, Challenges, and Concerns. *arXiv*. http://arxiv.org/abs/2212.03169v3
-
-Xiaoqing Chen, Siyang Li, Yunlu Tu, Ziwei Wang, & Dongrui Wu (2024). User-wise Perturbations for User Identity Protection in EEG-Based BCIs. *arXiv*. http://arxiv.org/abs/2411.10469v1

@@ -1,9 +1,0 @@
-Ali Leylavi Shoushtari (2023). Advances in soft grasping in agriculture. *arXiv*. http://arxiv.org/abs/2312.00175v1
-
-Muhammad Zubair Ahmad, Ayyaz Akhtar, Abdul Qadeer Khan, Amir Ali Khan, & Muhammad Murtaza Khan (2015). Low Cost Semi-Autonomous Agricultural Robots In Pakistan-Vision Based Navigation Scalable methodology for wheat harvesting. *arXiv*. http://arxiv.org/abs/1501.02378v1
-
-Pierre La Rocca, Gaël Guennebaud, & Aurélie Bugeau (2025). To what extent can current French mobile network support agricultural robots?. *arXiv*. http://arxiv.org/abs/2505.10044v3
-
-Qin Zhang, Manoj Karkee, & Amy Tabb (2019). The Use of Agricultural Robots in Orchard Management. *arXiv*. http://arxiv.org/abs/1907.13114v1
-
-Xingjian Li, & Lirong Xiang (2024). Photorealistic Robotic Simulation using Unreal Engine 5 for Agricultural Applications. *arXiv*. http://arxiv.org/abs/2405.18551v1
