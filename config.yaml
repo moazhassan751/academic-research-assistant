@@ -20,8 +20,11 @@ apis:
     delay: 3  # seconds between requests
   
   semantic_scholar:
+    # Use public API without authentication
     base_url: "https://api.semanticscholar.org/graph/v1"
-    rate_limit: 100  # requests per second
+    rate_limit: 100  # requests per 5 minutes for public API
+    use_api_key: false  # Explicitly disable API key usage
+    timeout: 30
   
   crossref:
     base_url: "https://api.crossref.org/works"
@@ -39,3 +42,15 @@ agents:
   max_retries: 3
   timeout: 300  # seconds
   verbose: true
+
+# Research Configuration
+research:
+  max_papers_default: 50
+  min_confidence_threshold: 0.5
+  
+# Logging Configuration
+logging:
+  level: "INFO"
+  file: "logs/research_assistant.log"
+  max_file_size: "10MB"
+  backup_count: 5

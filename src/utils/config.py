@@ -1,9 +1,10 @@
 import os
 import yaml
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from dotenv import load_dotenv
 
+# Load environment variables from .env file
 load_dotenv()
 
 class Config:
@@ -11,23 +12,132 @@ class Config:
         self.config_path = Path(config_path)
         self._config = self._load_config()
         self._setup_directories()
+        self._validate_configuration()
     
     def _load_config(self) -> Dict[str, Any]:
-        if not self.config_path.exists():
-            raise FileNotFoundError(f"Config file not found: {self.config_path}")
+        """Load configuration from YAML file with fallback defaults"""
+        default_config = {
+            'storage': {
+                'database_path': 'data/research.db',
+                'papers_dir': 'data/papers',
+                'cache_dir': 'data/cache',
+                'outputs_dir': 'data/outputs'
+            },
+            'llm': {
+                'development': {
+                    'provider': 'gemini',
+                    'model': 'gemini-2.5-flash',
+                    'temperature': 0.1,
+                    'max_tokens': 4096
+                },
+                'production': {
+                    'provider': 'gemini',
+                    'model': 'gemini-2.5-flash',
+                    'temperature': 0.1,
+                    'max_tokens': 4096
+                }
+            },
+            'apis': {
+                'semantic_scholar': {
+                    'base_url': 'https://api.semanticscholar.org/graph/v1',
+                    'rate_limit': 100,
+                    'timeout': 30
+                },
+                'arxiv': {
+                    'base_url': 'http://export.arxiv.org/api/query',
+                    'rate_limit': 3,
+                    'timeout': 30
+                }
+            },
+            'research': {
+                'max_papers_default': 50,
+                'max_retries': 3,
+                'min_confidence_threshold': 0.5
+            },
+            'logging': {
+                'level': 'INFO',
+                'file': 'logs/research_assistant.log',
+                'max_file_size': '10MB',
+                'backup_count': 5
+            }
+        }
         
-        with open(self.config_path, 'r') as f:
-            return yaml.safe_load(f)
+        if self.config_path.exists():
+            try:
+                with open(self.config_path, 'r', encoding='utf-8') as f:
+                    loaded_config = yaml.safe_load(f) or {}
+                    # Merge with defaults
+                    return self._merge_configs(default_config, loaded_config)
+            except Exception as e:
+                print(f"Warning: Error loading config file {self.config_path}: {e}")
+                print("Using default configuration")
+        else:
+            print(f"Config file {self.config_path} not found, using defaults")
+        
+        return default_config
+    
+    def _merge_configs(self, default: Dict[str, Any], loaded: Dict[str, Any]) -> Dict[str, Any]:
+        """Recursively merge loaded config with defaults"""
+        merged = default.copy()
+        
+        for key, value in loaded.items():
+            if key in merged and isinstance(merged[key], dict) and isinstance(value, dict):
+                merged[key] = self._merge_configs(merged[key], value)
+            else:
+                merged[key] = value
+        
+        return merged
     
     def _setup_directories(self):
         """Create necessary directories if they don't exist"""
-        dirs = [
-            self._config['storage']['papers_dir'],
-            self._config['storage']['cache_dir'],
-            self._config['storage']['outputs_dir']
+        directories = [
+            self.get('storage.papers_dir', 'data/papers'),
+            self.get('storage.cache_dir', 'data/cache'),
+            self.get('storage.outputs_dir', 'data/outputs'),
+            Path(self.get('logging.file', 'logs/research_assistant.log')).parent,
+            Path(self.get('storage.database_path', 'data/research.db')).parent
         ]
-        for dir_path in dirs:
-            Path(dir_path).mkdir(parents=True, exist_ok=True)
+        
+        for dir_path in directories:
+            try:
+                Path(dir_path).mkdir(parents=True, exist_ok=True)
+            except Exception as e:
+                print(f"Warning: Could not create directory {dir_path}: {e}")
+    
+    def _validate_configuration(self):
+        """Validate critical configuration settings"""
+        errors = []
+        warnings = []
+        
+        # Check API keys
+        api_keys = self.api_keys
+        if not api_keys.get('google'):
+            errors.append("GOOGLE_API_KEY is not set in environment variables")
+        
+        if not api_keys.get('semantic_scholar'):
+            warnings.append("SEMANTIC_SCHOLAR_API_KEY not set - using public API with lower rate limits")
+        
+        # Check environment
+        env = self.environment
+        if env not in ['development', 'production', 'testing']:
+            warnings.append(f"Unknown environment '{env}', using development settings")
+        
+        # Check LLM configuration
+        llm_config = self.llm_config
+        if not llm_config:
+            errors.append(f"LLM configuration not found for environment '{env}'")
+        
+        # Print warnings and errors
+        if warnings:
+            print("Configuration Warnings:")
+            for warning in warnings:
+                print(f"  - {warning}")
+        
+        if errors:
+            print("Configuration Errors:")
+            for error in errors:
+                print(f"  - {error}")
+            raise ValueError("Critical configuration errors found")
     
     def get(self, key: str, default=None):
         """Get config value using dot notation (e.g., 'llm.development.model')"""
@@ -43,18 +153,93 @@ class Config:
     
     @property
     def environment(self) -> str:
-        return os.getenv('ENVIRONMENT', 'development')
+        """Get current environment from env variable or default to development"""
+        return os.getenv('ENVIRONMENT', 'development').lower()
     
     @property
     def llm_config(self) -> Dict[str, Any]:
-        return self.get(f'llm.{self.environment}', {})
+        """Get LLM configuration for current environment"""
+        config = self.get(f'llm.{self.environment}')
+        if not config:
+            # Fallback to development config
+            config = self.get('llm.development', {})
+        return config
     
     @property
-    def api_keys(self) -> Dict[str, str]:
+    def api_keys(self) -> Dict[str, Optional[str]]:
+        """Get API keys from environment variables"""
         return {
             'google': os.getenv('GOOGLE_API_KEY'),
             'openai': os.getenv('OPENAI_API_KEY'),
             'semantic_scholar': os.getenv('SEMANTIC_SCHOLAR_API_KEY')
         }
+    
+    @property
+    def database_path(self) -> str:
+        """Get database path with environment variable override"""
+        return os.getenv('DATABASE_PATH', self.get('storage.database_path', 'data/research.db'))
+    
+    @property
+    def log_level(self) -> str:
+        """Get log level with environment variable override"""
+        return os.getenv('LOG_LEVEL', self.get('logging.level', 'INFO')).upper()
+    
+    @property
+    def max_papers_default(self) -> int:
+        """Get default maximum papers setting"""
+        try:
+            return int(os.getenv('MAX_PAPERS_DEFAULT', self.get('research.max_papers_default', 50)))
+        except (ValueError, TypeError):
+            return 50
+    
+    @property
+    def request_timeout(self) -> int:
+        """Get request timeout setting"""
+        try:
+            return int(os.getenv('REQUEST_TIMEOUT', self.get('apis.semantic_scholar.timeout', 30)))
+        except (ValueError, TypeError):
+            return 30
+    
+    def is_development(self) -> bool:
+        """Check if running in development mode"""
+        return self.environment == 'development'
+    
+    def is_production(self) -> bool:
+        """Check if running in production mode"""
+        return self.environment == 'production'
+    
+    def validate_api_keys(self) -> bool:
+        """Validate that required API keys are present"""
+        api_keys = self.api_keys
+        
+        # Google API key is required
+        if not api_keys.get('google'):
+            return False
+        
+        return True
+    
+    def get_rate_limits(self) -> Dict[str, int]:
+        """Get rate limits from environment or config"""
+        return {
+            'gemini': int(os.getenv('GEMINI_REQUESTS_PER_MINUTE', 
+                                   self.get('apis.gemini.rate_limit', 10))),
+            'semantic_scholar': int(os.getenv('SEMANTIC_SCHOLAR_REQUESTS_PER_MINUTE',
+                                            self.get('apis.semantic_scholar.rate_limit', 100)))
+        }
+    
+    def save_config(self, config_path: Optional[str] = None) -> bool:
+        """Save current configuration to YAML file"""
+        try:
+            save_path = Path(config_path) if config_path else self.config_path
+            
+            with open(save_path, 'w', encoding='utf-8') as f:
+                yaml.safe_dump(self._config, f, default_flow_style=False, indent=2)
+            
+            print(f"Configuration saved to {save_path}")
+            return True
+        except Exception as e:
+            print(f"Error saving configuration: {e}")
+            return False
 
+# Global config instance
 config = Config()

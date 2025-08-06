@@ -1,0 +1,4 @@
+- Regulating Next-Generation Implantable Brain-Computer Interfaces: Recommendations for Ethical Development and Implementation (2025)
+- The Interplay of Computing, Ethics, and Policy in Brain-Computer Interface Design (2024)
+- When Brain-Computer Interfaces Meet the Metaverse: Landscape, Demonstrator, Trends, Challenges, and Concerns (2022)
+- User-wise Perturbations for User Identity Protection in EEG-Based BCIs (2024)

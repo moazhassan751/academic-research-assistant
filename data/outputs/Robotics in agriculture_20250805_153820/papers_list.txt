@@ -1,0 +1,5 @@
+- The Use of Agricultural Robots in Orchard Management (2019)
+- Low Cost Semi-Autonomous Agricultural Robots In Pakistan-Vision Based Navigation Scalable methodology for wheat harvesting (2015)
+- Photorealistic Robotic Simulation using Unreal Engine 5 for Agricultural Applications (2024)
+- Advances in soft grasping in agriculture (2023)
+- To what extent can current French mobile network support agricultural robots? (2025)

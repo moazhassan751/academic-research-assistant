@@ -1,5 +1,5 @@
 from crewai import Crew, Task, Process
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Callable
 from datetime import datetime, timedelta
 from ..agents.literature_survey_agent import LiteratureSurveyAgent
 from ..agents.note_taking_agent import NoteTakingAgent
@@ -147,45 +147,89 @@ class ResearchCrew:
                                  specific_aspects: List[str] = None,
                                  max_papers: int = 100,
                                  paper_type: str = "survey",
-                                 date_from: Optional[datetime] = None) -> Dict[str, Any]:
-        """Execute the complete research workflow"""
+                                 date_from: Optional[datetime] = None,
+                                 progress_callback: Optional[Callable[[int, str], None]] = None) -> Dict[str, Any]:
+        """Execute the complete research workflow
+        
+        Args:
+            research_topic: The main research topic
+            specific_aspects: Specific aspects to focus on
+            max_papers: Maximum number of papers to collect
+            paper_type: Type of paper to generate (survey, review, analysis)
+            date_from: Optional date filter for papers
+            progress_callback: Optional callback function for progress updates
+                              Called with (step_number, description)
+        """
         
         logger.info(f"Starting research workflow for: {research_topic}")
         start_time = datetime.now()
         
+        def update_progress(step: int, description: str):
+            """Helper function to update progress"""
+            if progress_callback:
+                try:
+                    progress_callback(step, description)
+                except Exception as e:
+                    logger.warning(f"Progress callback error: {e}")
+        
         try:
             # Step 1: Literature Survey
             logger.info("Step 1: Conducting literature survey...")
+            update_progress(1, "Searching academic databases for papers...")
+            
             papers = self.literature_agent.conduct_literature_survey(
                 research_topic, specific_aspects, max_papers, date_from
             )
             
             if not papers:
                 logger.error("No papers found. Aborting workflow.")
-                return {'error': 'No papers found for the given topic'}
+                return {
+                    'success': False,
+                    'error': 'No papers found for the given topic',
+                    'research_topic': research_topic,
+                    'execution_time': str(datetime.now() - start_time)
+                }
+            
+            update_progress(1, f"Found {len(papers)} relevant papers")
             
             # Step 2: Note Taking
             logger.info("Step 2: Extracting research notes...")
+            update_progress(2, "Extracting key insights from papers...")
+            
             notes = self.note_agent.process_multiple_papers(papers, research_topic)
+            
+            update_progress(2, f"Extracted {len(notes)} research notes")
             
             # Step 3: Theme Synthesis
             logger.info("Step 3: Synthesizing research themes...")
+            update_progress(3, "Identifying research themes and patterns...")
+            
             synthesis_result = self.theme_agent.synthesize_research_landscape(notes)
             themes = synthesis_result['themes']
             gaps = synthesis_result['gaps']
             
+            update_progress(3, f"Identified {len(themes)} research themes")
+            
             # Step 4: Citation Generation
             logger.info("Step 4: Generating citations...")
+            update_progress(4, "Generating formatted citations...")
+            
             citations = self.citation_agent.generate_citations_for_papers(papers)
+            
+            update_progress(4, f"Generated {len(citations)} citations")
             
             # Step 5: Draft Writing
             logger.info("Step 5: Writing paper draft...")
+            update_progress(5, "Composing academic paper draft...")
+            
             draft = self.draft_agent.compile_full_draft(
                 research_topic, themes, papers, notes, gaps
             )
             
             # Insert citations into draft
             logger.info("Step 6: Inserting citations...")
+            update_progress(5, "Inserting citations into draft...")
+            
             for section_key, section_content in draft['sections'].items():
                 if isinstance(section_content, dict) and 'content' in section_content:
                     draft['sections'][section_key]['content'] = \
@@ -202,6 +246,9 @@ class ResearchCrew:
             
             # Calculate execution time
             execution_time = datetime.now() - start_time
+            
+            # Final progress update
+            update_progress(5, "Research workflow completed successfully!")
             
             # Compile final results
             results = {
@@ -229,6 +276,7 @@ class ResearchCrew:
             
         except Exception as e:
             logger.error(f"Error in research workflow: {e}")
+            update_progress(0, f"Error occurred: {str(e)}")
             return {
                 'success': False,
                 'error': str(e),
@@ -323,4 +371,3 @@ class ResearchCrew:
             md_content += draft['bibliography'] + "\n\n"
         
         return md_content
-        """Download PDF from URL"""

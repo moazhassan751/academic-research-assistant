@@ -1,0 +1,21 @@
+{
+  "success": true,
+  "research_topic": "Ethical Implications of Brain-Computer Interfaces (BCIs)",
+  "execution_time": "0:05:45.530771",
+  "statistics": {
+    "papers_found": 4,
+    "notes_extracted": 29,
+    "themes_identified": 2,
+    "gaps_identified": 7,
+    "citations_generated": 4
+  },
+  "gaps": [
+    "Limited research on longitudinal studies in the current literature",
+    "Limited research on clinical trials in the current literature",
+    "Limited research on real-world evidence in the current literature",
+    "Limited research on cost-effectiveness in the current literature",
+    "Limited research on patient outcomes in the current literature",
+    "Limited research on implementation challenges in the current literature",
+    "Limited research on regulatory considerations in the current literature"
+  ]
+}

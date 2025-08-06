@@ -1,0 +1,9 @@
+Emiel van Miltenburg, & Chenghua Lin (2025). Natural Language Generation. *arXiv*. http://arxiv.org/abs/2503.16728v2
+
+Emre Erturk, & Hong Shi (2016). Natural Language Processing using Hadoop and KOSHIK. *arXiv*. http://arxiv.org/abs/1608.04434v1
+
+Kebing Jin, & Hankz Hankui Zhuo (2022). Integrating AI Planning with Natural Language Processing: A Combination of Explicit and Tacit Knowledge. *arXiv*. http://arxiv.org/abs/2202.07138v2
+
+Leon Derczynski (2019). Simple Natural Language Processing Tools for Danish. *arXiv*. http://arxiv.org/abs/1906.11608v2
+
+Mengyi Liu, & Jianqiu Xu (2025). NLI4DB: A Systematic Review of Natural Language Interfaces for Databases. *arXiv*. http://arxiv.org/abs/2503.02435v1
