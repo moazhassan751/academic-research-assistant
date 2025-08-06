@@ -10,3 +10,4 @@ data/backup_*.db
 .DS_Store 
 Thumbs.db 
 .ipynb_checkpoints/ 
+.env 
