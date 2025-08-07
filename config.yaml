@@ -19,16 +19,17 @@ apis:
     max_results: 100
     delay: 3  # seconds between requests
   
-  semantic_scholar:
-    # Use public API without authentication
-    base_url: "https://api.semanticscholar.org/graph/v1"
-    rate_limit: 100  # requests per 5 minutes for public API
-    use_api_key: false  # Explicitly disable API key usage
+  openalex:
+    base_url: "https://api.openalex.org/works"
+    rate_limit: 10  # requests per second (OpenAlex allows up to 10)
     timeout: 30
+    user_agent: "AcademicResearchAssistant/1.0 (mailto:rmoazhassan555@gmail.com)"
   
   crossref:
     base_url: "https://api.crossref.org/works"
-    mailto: "rmoazhassan555@gmail.com"
+    mailto: "rmoazhassan555@gmail.com"  # Required for CrossRef politeness policy
+    rate_limit: 1  # Be conservative with rate limiting
+    timeout: 30
 
 # Storage Configuration
 storage:

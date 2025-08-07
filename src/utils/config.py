@@ -38,21 +38,35 @@ class Config:
                 }
             },
             'apis': {
-                'semantic_scholar': {
-                    'base_url': 'https://api.semanticscholar.org/graph/v1',
-                    'rate_limit': 100,
-                    'timeout': 30
+                'openalex': {
+                    'base_url': 'https://api.openalex.org/works',
+                    'rate_limit': 10,
+                    'timeout': 30,
+                    'user_agent': 'AcademicResearchAssistant/1.0 (mailto:rmoazhassan555@gmail.com)'
+                },
+                'crossref': {
+                    'base_url': 'https://api.crossref.org/works',
+                    'rate_limit': 1,
+                    'timeout': 30,
+                    'mailto': 'rmoazhassan555@gmail.com'
                 },
                 'arxiv': {
                     'base_url': 'http://export.arxiv.org/api/query',
                     'rate_limit': 3,
-                    'timeout': 30
+                    'timeout': 30,
+                    'max_results': 100,
+                    'delay': 3
                 }
             },
             'research': {
                 'max_papers_default': 50,
                 'max_retries': 3,
-                'min_confidence_threshold': 0.5
+                'min_confidence_threshold': 0.5,
+                'deduplication': {
+                    'doi_priority': True,
+                    'title_similarity_threshold': 0.85,
+                    'author_match_threshold': 0.7
+                }
             },
             'logging': {
                 'level': 'INFO',
@@ -114,8 +128,17 @@ class Config:
         if not api_keys.get('google'):
             errors.append("GOOGLE_API_KEY is not set in environment variables")
         
-        if not api_keys.get('semantic_scholar'):
-            warnings.append("SEMANTIC_SCHOLAR_API_KEY not set - using public API with lower rate limits")
+        # Check user agent and mailto configuration
+        openalex_user_agent = self.get('apis.openalex.user_agent')
+        crossref_mailto = self.get('apis.crossref.mailto')
+        
+        if (not openalex_user_agent or 
+            'your-email@example.com' in openalex_user_agent or 
+            'mailto:' not in openalex_user_agent):
+            warnings.append("Please set a valid email in apis.openalex.user_agent for better OpenAlex rate limits")
+        
+        if crossref_mailto == 'your-email@example.com' or not crossref_mailto:
+            warnings.append("Please set a valid email in apis.crossref.mailto for better CrossRef rate limits")
         
         # Check environment
         env = self.environment
@@ -170,8 +193,7 @@ class Config:
         """Get API keys from environment variables"""
         return {
             'google': os.getenv('GOOGLE_API_KEY'),
-            'openai': os.getenv('OPENAI_API_KEY'),
-            'semantic_scholar': os.getenv('SEMANTIC_SCHOLAR_API_KEY')
+            'openai': os.getenv('OPENAI_API_KEY')
         }
     
     @property
@@ -196,7 +218,7 @@ class Config:
     def request_timeout(self) -> int:
         """Get request timeout setting"""
         try:
-            return int(os.getenv('REQUEST_TIMEOUT', self.get('apis.semantic_scholar.timeout', 30)))
+            return int(os.getenv('REQUEST_TIMEOUT', self.get('apis.openalex.timeout', 30)))
         except (ValueError, TypeError):
             return 30
     
@@ -223,9 +245,37 @@ class Config:
         return {
             'gemini': int(os.getenv('GEMINI_REQUESTS_PER_MINUTE', 
                                    self.get('apis.gemini.rate_limit', 10))),
-            'semantic_scholar': int(os.getenv('SEMANTIC_SCHOLAR_REQUESTS_PER_MINUTE',
-                                            self.get('apis.semantic_scholar.rate_limit', 100)))
+            'openalex': int(os.getenv('OPENALEX_REQUESTS_PER_SECOND',
+                                    self.get('apis.openalex.rate_limit', 10))),
+            'crossref': int(os.getenv('CROSSREF_REQUESTS_PER_SECOND',
+                                    self.get('apis.crossref.rate_limit', 1))),
+            'arxiv': int(os.getenv('ARXIV_DELAY_SECONDS',
+                               self.get('apis.arxiv.delay', 3)))
         }
+    
+    def get_api_config(self, api_name: str) -> Dict[str, Any]:
+        """Get complete configuration for a specific API"""
+        return self.get(f'apis.{api_name}', {})
+    
+    def get_openalex_config(self) -> Dict[str, Any]:
+        """Get OpenAlex API configuration"""
+        return self.get_api_config('openalex')
+    
+    def get_crossref_config(self) -> Dict[str, Any]:
+        """Get CrossRef API configuration"""
+        return self.get_api_config('crossref')
+    
+    def get_arxiv_config(self) -> Dict[str, Any]:
+        """Get ArXiv API configuration"""
+        return self.get_api_config('arxiv')
+    
+    def get_deduplication_config(self) -> Dict[str, Any]:
+        """Get deduplication configuration"""
+        return self.get('research.deduplication', {
+            'doi_priority': True,
+            'title_similarity_threshold': 0.85,
+            'author_match_threshold': 0.7
+        })
     
     def save_config(self, config_path: Optional[str] = None) -> bool:
         """Save current configuration to YAML file"""

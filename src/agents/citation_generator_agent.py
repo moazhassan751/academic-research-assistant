@@ -3,6 +3,7 @@ from typing import List, Dict, Any, Optional
 from ..storage.models import Paper, Citation
 from ..storage.database import db
 from ..tools.citation_formatter import CitationFormatter
+from ..tools.Cross_Ref_tool import CrossRefTool
 from ..llm.llm_factory import LLMFactory
 from ..utils.logging import logger
 
@@ -10,6 +11,7 @@ class CitationGeneratorAgent:
     def __init__(self):
         self.llm = LLMFactory.create_llm()
         self.citation_formatter = CitationFormatter()
+        self.crossref_tool = CrossRefTool()
         
         self.agent = Agent(
             role='Citation and Bibliography Specialist',
@@ -34,8 +36,19 @@ class CitationGeneratorAgent:
                     citations.append(existing_citation)
                     continue
                 
+                # Try to get enhanced citation data from CrossRef if we have a DOI
+                enhanced_paper = paper
+                if paper.doi:
+                    try:
+                        crossref_paper = self.crossref_tool.get_paper_by_doi(paper.doi)
+                        if crossref_paper:
+                            # Merge data, preferring more complete information
+                            enhanced_paper = self.merge_paper_data(paper, crossref_paper)
+                    except Exception as e:
+                        logger.warning(f"Could not enhance citation data from CrossRef: {e}")
+                
                 # Generate new citation
-                citation = self.citation_formatter.create_citation(paper)
+                citation = self.citation_formatter.create_citation(enhanced_paper)
                 
                 # Save to database
                 if db.save_citation(citation):
@@ -47,6 +60,28 @@ class CitationGeneratorAgent:
                 continue
         
         return citations
+    
+    def merge_paper_data(self, original: Paper, crossref: Paper) -> Paper:
+        """Merge paper data, preferring more complete information"""
+        # Start with original paper
+        merged_data = {
+            'id': original.id,
+            'title': crossref.title if len(crossref.title) > len(original.title) else original.title,
+            'authors': crossref.authors if len(crossref.authors) > len(original.authors) else original.authors,
+            'abstract': original.abstract if len(original.abstract) > len(crossref.abstract) else crossref.abstract,
+            'url': original.url,  # Keep original URL
+            'published_date': crossref.published_date if crossref.published_date else original.published_date,
+            'venue': crossref.venue if crossref.venue and not original.venue else original.venue,
+            'citations': original.citations,  # Keep original citation count
+            'pdf_path': original.pdf_path,
+            'full_text': original.full_text,
+            'keywords': original.keywords,
+            'doi': crossref.doi if crossref.doi else original.doi,
+            'arxiv_id': original.arxiv_id,
+            'created_at': original.created_at
+        }
+        
+        return Paper(**merged_data)
     
     def create_bibliography(self, citations: List[Citation], 
                            style: str = "apa") -> str:
@@ -127,10 +162,56 @@ class CitationGeneratorAgent:
         
         return issues
     
+    def enhance_citation_with_crossref(self, citation: Citation, paper: Paper) -> Citation:
+        """Enhance citation using CrossRef data"""
+        if not paper.doi:
+            return citation
+        
+        try:
+            crossref_paper = self.crossref_tool.get_paper_by_doi(paper.doi)
+            if not crossref_paper:
+                return citation
+            
+            # Create enhanced citation
+            enhanced_citation = Citation(
+                id=citation.id,
+                paper_id=citation.paper_id,
+                citation_key=citation.citation_key,
+                apa_format=self.citation_formatter.format_apa(crossref_paper),
+                mla_format=self.citation_formatter.format_mla(crossref_paper),
+                bibtex=self.citation_formatter.format_bibtex(crossref_paper, citation.citation_key)
+            )
+            
+            return enhanced_citation
+            
+        except Exception as e:
+            logger.error(f"Error enhancing citation with CrossRef: {e}")
+            return citation
+    
     def generate_citation_report(self, citations: List[Citation]) -> str:
         """Generate a report about citation quality and completeness"""
         total_citations = len(citations)
+        if total_citations == 0:
+            return "No citations to analyze."
+        
         issues = self.validate_citations(citations)
+        
+        # Calculate statistics
+        total_issues = sum(len(v) for v in issues.values())
+        completeness_percentage = ((total_citations - total_issues) / total_citations * 100)
+        
+        # Count citations by source
+        source_counts = {'crossref': 0, 'openalex': 0, 'arxiv': 0, 'other': 0}
+        for citation in citations:
+            paper_id = citation.paper_id
+            if 'crossref' in paper_id:
+                source_counts['crossref'] += 1
+            elif 'openalex' in paper_id:
+                source_counts['openalex'] += 1
+            elif 'arxiv' in paper_id:
+                source_counts['arxiv'] += 1
+            else:
+                source_counts['other'] += 1
         
         report = f"""
 Citation Quality Report
@@ -138,18 +219,25 @@ Citation Quality Report
 
 Total Citations: {total_citations}
 
+Source Distribution:
+- CrossRef: {source_counts['crossref']}
+- OpenAlex: {source_counts['openalex']}
+- ArXiv: {source_counts['arxiv']}
+- Other: {source_counts['other']}
+
 Issues Found:
 - Missing Authors: {len(issues['missing_authors'])}
 - Missing Dates: {len(issues['missing_dates'])}
 - Missing Titles: {len(issues['missing_titles'])}
 - Format Errors: {len(issues['format_errors'])}
 
-Citation Completeness: {((total_citations - sum(len(v) for v in issues.values())) / total_citations * 100):.1f}%
+Citation Completeness: {completeness_percentage:.1f}%
 
 Recommendations:
 - Verify author information for papers with missing authors
 - Check publication dates for papers marked as "n.d."
 - Review format errors for consistency
+- Consider using DOIs for more reliable citation data
 """
         
         return report.strip()

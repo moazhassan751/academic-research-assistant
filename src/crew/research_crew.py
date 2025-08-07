@@ -33,11 +33,12 @@ class ResearchCrew:
             Conduct a comprehensive literature survey on the topic: {research_topic}
             
             Requirements:
-            - Search multiple academic databases (arXiv, Semantic Scholar)
+            - Search multiple academic databases (arXiv, OpenAlex, CrossRef)
             - Find {max_papers} most relevant papers
             - Filter and rank papers by relevance
             - Focus on recent publications (last 5 years preferred)
             - Save all papers to the database
+            - Remove duplicates based on DOI and title similarity
             
             Specific aspects to focus on: {specific_aspects or ['general overview']}
             
@@ -100,6 +101,7 @@ class ResearchCrew:
             
             Requirements:
             - Create citations in APA, MLA, and BibTeX formats
+            - Enhance citations using CrossRef data when DOI is available
             - Generate unique citation keys
             - Validate citation completeness and format
             - Create a master bibliography
@@ -175,7 +177,7 @@ class ResearchCrew:
         try:
             # Step 1: Literature Survey
             logger.info("Step 1: Conducting literature survey...")
-            update_progress(1, "Searching academic databases for papers...")
+            update_progress(1, "Searching academic databases (ArXiv, OpenAlex, CrossRef)...")
             
             papers = self.literature_agent.conduct_literature_survey(
                 research_topic, specific_aspects, max_papers, date_from
@@ -212,7 +214,7 @@ class ResearchCrew:
             
             # Step 4: Citation Generation
             logger.info("Step 4: Generating citations...")
-            update_progress(4, "Generating formatted citations...")
+            update_progress(4, "Generating formatted citations with CrossRef enhancement...")
             
             citations = self.citation_agent.generate_citations_for_papers(papers)
             
@@ -244,6 +246,9 @@ class ResearchCrew:
             bibliography = self.citation_agent.create_bibliography(citations, 'apa')
             draft['bibliography'] = bibliography
             
+            # Generate citation quality report
+            citation_report = self.citation_agent.generate_citation_report(citations)
+            
             # Calculate execution time
             execution_time = datetime.now() - start_time
             
@@ -268,7 +273,8 @@ class ResearchCrew:
                 'gaps': gaps,
                 'citations': citations,
                 'draft': draft,
-                'bibliography': bibliography
+                'bibliography': bibliography,
+                'citation_report': citation_report
             }
             
             logger.info(f"Research workflow completed successfully in {execution_time}")
@@ -324,10 +330,15 @@ class ResearchCrew:
             with open(project_dir / "bibliography.txt", 'w') as f:
                 f.write(results['bibliography'])
         
+        # Save citation report
+        if 'citation_report' in results:
+            with open(project_dir / "citation_report.txt", 'w') as f:
+                f.write(results['citation_report'])
+        
         # Save papers list
         if 'papers' in results:
             papers_content = "\n".join([
-                f"- {paper.title} ({paper.published_date.year if paper.published_date else 'n.d.'})"
+                f"- {paper.title} ({paper.published_date.year if paper.published_date else 'n.d.'})\n  Authors: {', '.join(paper.authors[:3]) if paper.authors else 'Unknown'}\n  Source: {paper.id.split('_')[0].upper()}\n  DOI: {paper.doi or 'N/A'}\n"
                 for paper in results['papers']
             ])
             with open(project_dir / "papers_list.txt", 'w') as f:

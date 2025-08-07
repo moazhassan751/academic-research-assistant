@@ -2,7 +2,8 @@ from crewai import Agent, Task
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
 from ..tools.arxiv_tool import ArxivTool
-from ..tools.semantic_scholar_tool import SemanticScholarTool
+from ..tools.Open_Alex_tool import OpenAlexTool
+from ..tools.Cross_Ref_tool import CrossRefTool
 from ..storage.models import Paper
 from ..storage.database import db
 from ..llm.llm_factory import LLMFactory
@@ -12,7 +13,8 @@ class LiteratureSurveyAgent:
     def __init__(self):
         self.llm = LLMFactory.create_llm()
         self.arxiv_tool = ArxivTool()
-        self.semantic_scholar_tool = SemanticScholarTool()
+        self.openalex_tool = OpenAlexTool(mailto="rmoazhassan555@gmail.com")
+        self.crossref_tool = CrossRefTool()
         
         self.agent = Agent(
             role='Literature Survey Specialist',
@@ -68,37 +70,68 @@ class LiteratureSurveyAgent:
             logger.info(f"Searching for: {query}")
             
             # Search ArXiv
-            arxiv_papers = self.arxiv_tool.search_papers(
-                query, max_results_per_query, date_from
-            )
-            all_papers.extend(arxiv_papers)
+            try:
+                arxiv_papers = self.arxiv_tool.search_papers(
+                    query, max_results_per_query, date_from
+                )
+                all_papers.extend(arxiv_papers)
+                logger.info(f"ArXiv returned {len(arxiv_papers)} papers for '{query}'")
+            except Exception as e:
+                logger.error(f"ArXiv search failed for '{query}': {e}")
             
-            # Search Semantic Scholar
-            s2_papers = self.semantic_scholar_tool.search_papers(
-                query, max_results_per_query
-            )
-            all_papers.extend(s2_papers)
+            # Search OpenAlex
+            try:
+                openalex_papers = self.openalex_tool.search_papers(
+                    query, max_results_per_query, date_from
+                )
+                all_papers.extend(openalex_papers)
+                logger.info(f"OpenAlex returned {len(openalex_papers)} papers for '{query}'")
+            except Exception as e:
+                logger.error(f"OpenAlex search failed for '{query}': {e}")
+            
+            # Search CrossRef
+            try:
+                crossref_papers = self.crossref_tool.search_papers(
+                    query, max_results_per_query, date_from
+                )
+                all_papers.extend(crossref_papers)
+                logger.info(f"CrossRef returned {len(crossref_papers)} papers for '{query}'")
+            except Exception as e:
+                logger.error(f"CrossRef search failed for '{query}': {e}")
         
-        # Remove duplicates based on title similarity
+        # Remove duplicates based on title similarity and DOI
         unique_papers = self.deduplicate_papers(all_papers)
         
         # Save papers to database
         for paper in unique_papers:
-            db.save_paper(paper)
+            try:
+                db.save_paper(paper)
+            except Exception as e:
+                logger.error(f"Error saving paper to database: {e}")
         
         return unique_papers
     
     def deduplicate_papers(self, papers: List[Paper]) -> List[Paper]:
-        """Remove duplicate papers based on title similarity"""
+        """Remove duplicate papers based on title similarity and DOI"""
         unique_papers = []
         seen_titles = set()
+        seen_dois = set()
         
         for paper in papers:
-            # Simple deduplication based on title
-            title_clean = paper.title.lower().strip()
-            if title_clean not in seen_titles:
-                seen_titles.add(title_clean)
-                unique_papers.append(paper)
+            # Check for DOI duplicates first (most reliable)
+            if paper.doi and paper.doi in seen_dois:
+                continue
+                
+            # Check for title duplicates
+            title_clean = paper.title.lower().strip().replace(' ', '').replace('-', '')
+            if title_clean in seen_titles:
+                continue
+            
+            # Add to unique papers
+            unique_papers.append(paper)
+            seen_titles.add(title_clean)
+            if paper.doi:
+                seen_dois.add(paper.doi)
         
         logger.info(f"Removed {len(papers) - len(unique_papers)} duplicates")
         return unique_papers
@@ -117,6 +150,9 @@ class LiteratureSurveyAgent:
             
             Paper Title: {paper.title}
             Abstract: {paper.abstract[:500]}...
+            Authors: {', '.join(paper.authors[:3]) if paper.authors else 'Unknown'}
+            Venue: {paper.venue or 'Unknown'}
+            Citations: {paper.citations}
             
             Score this paper's relevance from 0-10 and provide a brief justification.
             Format: SCORE: X, JUSTIFICATION: brief explanation
@@ -129,6 +165,10 @@ class LiteratureSurveyAgent:
             except Exception as e:
                 logger.error(f"Error scoring paper: {e}")
                 scored_papers.append((paper, 5))  # Default score
+        
+        # Add remaining papers with default score
+        for paper in papers[20:]:
+            scored_papers.append((paper, 5))
         
         # Sort by score and return papers
         scored_papers.sort(key=lambda x: x[1], reverse=True)

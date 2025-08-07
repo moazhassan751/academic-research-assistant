@@ -50,7 +50,23 @@ def display_config_info():
         config_table.add_row("Model", llm_config.get('model', 'Unknown'))
         config_table.add_row("Database", str(Path(config.get('storage.database_path', 'data/research.db')).resolve()))
         
+        # Display API configurations
+        openalex_config = config.get_openalex_config()
+        crossref_config = config.get_crossref_config()
+        
+        config_table.add_row("OpenAlex API", "Enabled" if openalex_config else "Disabled")
+        config_table.add_row("CrossRef API", "Enabled" if crossref_config else "Disabled")
+        config_table.add_row("ArXiv API", "Enabled")
+        
         console.print(config_table)
+        
+        # Display rate limits
+        rate_limits = config.get_rate_limits()
+        console.print("\n[bold cyan]API Rate Limits:[/bold cyan]")
+        console.print(f"  • OpenAlex: {rate_limits.get('openalex', 10)} req/sec")
+        console.print(f"  • CrossRef: {rate_limits.get('crossref', 1)} req/sec")
+        console.print(f"  • ArXiv: {rate_limits.get('arxiv', 3)}s delay")
+        
     except Exception as e:
         console.print(f"[red]Error displaying config: {e}[/red]")
         logger.error(f"Config display error: {e}", exc_info=True)
@@ -73,6 +89,129 @@ def cli(ctx, verbose):
 def config_info():
     """Display current configuration"""
     display_config_info()
+
+@cli.command()
+def test_apis():
+    """Test API connections and configurations"""
+    try:
+        from src.tools.Open_Alex_tool import OpenAlexTool
+        from src.tools.Cross_Ref_tool import CrossRefTool
+        from src.tools.arxiv_tool import ArxivTool
+        
+        console.print("[cyan]🔧 Testing API connections...[/cyan]")
+        
+        # Test OpenAlex with more comprehensive testing
+        console.print("\n[bold cyan]Testing OpenAlex API:[/bold cyan]")
+        try:
+            openalex = OpenAlexTool(mailto="rmoazhassan555@gmail.com")
+            
+            # Test with multiple queries to ensure robustness
+            test_queries = [
+                ("machine learning", 2),
+                ("artificial intelligence", 2),
+                ("deep learning", 1)
+            ]
+            
+            total_papers = 0
+            successful_queries = 0
+            
+            for query, max_results in test_queries:
+                console.print(f"   Testing query: '{query}' (max: {max_results})")
+                try:
+                    test_result = openalex.search_papers(query, max_results=max_results)
+                    if test_result and len(test_result) > 0:
+                        total_papers += len(test_result)
+                        successful_queries += 1
+                        console.print(f"   ✅ Found {len(test_result)} papers")
+                        
+                        # Show sample paper details
+                        if test_result:
+                            sample_paper = test_result[0]
+                            console.print(f"   📄 Sample: {sample_paper.title[:60]}...")
+                            console.print(f"   👤 Authors: {', '.join(sample_paper.authors[:2]) if sample_paper.authors else 'N/A'}")
+                            console.print(f"   📊 Citations: {getattr(sample_paper, 'citations', 0)}")
+                    else:
+                        console.print(f"   ⚠️ No papers found for '{query}'")
+                except Exception as query_error:
+                    console.print(f"   ❌ Query failed: {str(query_error)[:100]}")
+            
+            if successful_queries > 0:
+                console.print(f"[green]✅ OpenAlex API: Connected (Found {total_papers} papers across {successful_queries} queries)[/green]")
+                
+                # Test additional functionality
+                if total_papers > 0:
+                    console.print("   Testing additional features...")
+                    try:
+                        # Test author search
+                        author_papers = openalex.search_by_author("Hinton", max_results=1)
+                        if author_papers:
+                            console.print(f"   ✅ Author search: Found {len(author_papers)} papers")
+                        else:
+                            console.print("   ⚠️ Author search: No results")
+                    except Exception as e:
+                        console.print(f"   ⚠️ Author search error: {str(e)[:50]}")
+                
+            else:
+                console.print("[red]❌ OpenAlex API: No successful queries[/red]")
+                
+        except ImportError:
+            console.print("[red]❌ OpenAlex API: Import error - tool module not found[/red]")
+        except Exception as e:
+            console.print(f"[red]❌ OpenAlex API: Error - {str(e)[:100]}[/red]")
+            logger.error(f"OpenAlex test error: {e}", exc_info=True)
+        
+        # Test CrossRef with enhanced testing
+        console.print("\n[bold cyan]Testing CrossRef API:[/bold cyan]")
+        try:
+            crossref = CrossRefTool()
+            test_result = crossref.search_papers("artificial intelligence", max_results=2)
+            if test_result and len(test_result) > 0:
+                console.print(f"[green]✅ CrossRef API: Connected (Found {len(test_result)} papers)[/green]")
+                sample_paper = test_result[0]
+                console.print(f"   📄 Sample: {sample_paper.title[:60]}...")
+                console.print(f"   👤 Authors: {', '.join(sample_paper.authors[:2]) if sample_paper.authors else 'N/A'}")
+            else:
+                console.print("[yellow]⚠️ CrossRef API: Connected but no results[/yellow]")
+        except ImportError:
+            console.print("[red]❌ CrossRef API: Import error - tool module not found[/red]")
+        except Exception as e:
+            console.print(f"[red]❌ CrossRef API: Error - {str(e)[:100]}[/red]")
+            logger.error(f"CrossRef test error: {e}", exc_info=True)
+        
+        # Test ArXiv with enhanced testing
+        console.print("\n[bold cyan]Testing ArXiv API:[/bold cyan]")
+        try:
+            arxiv = ArxivTool()
+            test_result = arxiv.search_papers("neural networks", max_results=2)
+            if test_result and len(test_result) > 0:
+                console.print(f"[green]✅ ArXiv API: Connected (Found {len(test_result)} papers)[/green]")
+                sample_paper = test_result[0]
+                console.print(f"   📄 Sample: {sample_paper.title[:60]}...")
+                console.print(f"   👤 Authors: {', '.join(sample_paper.authors[:2]) if sample_paper.authors else 'N/A'}")
+            else:
+                console.print("[yellow]⚠️ ArXiv API: Connected but no results[/yellow]")
+        except ImportError:
+            console.print("[red]❌ ArXiv API: Import error - tool module not found[/red]")
+        except Exception as e:
+            console.print(f"[red]❌ ArXiv API: Error - {str(e)[:100]}[/red]")
+            logger.error(f"ArXiv test error: {e}", exc_info=True)
+        
+        # Summary
+        console.print("\n[bold cyan]API Test Summary:[/bold cyan]")
+        console.print("✅ = Fully working")
+        console.print("⚠️ = Connected but limited results")
+        console.print("❌ = Error or not working")
+        
+    except ImportError as e:
+        console.print(f"[red]❌ Import Error: {e}[/red]")
+        console.print("Make sure all tool modules are properly installed.")
+        console.print("\n[yellow]💡 Troubleshooting:[/yellow]")
+        console.print("   - Check if all dependencies are installed: pip install -r requirements.txt")
+        console.print("   - Verify your Python path includes the project directory")
+        console.print("   - Make sure all __init__.py files are present")
+    except Exception as e:
+        console.print(f"[red]❌ Test Error: {e}[/red]")
+        logger.error(f"API test error: {e}", exc_info=True)
 
 @cli.command()
 def stats():
@@ -125,6 +264,7 @@ def research(topic, aspects, max_papers, paper_type, recent_only, output_dir, sa
     
     if max_papers > 200:
         console.print("[yellow]⚠️ Warning: Large number of papers may take significant time[/yellow]")
+        console.print(f"[dim]Estimated time: {max_papers * 2} seconds (based on API rate limits)[/dim]")
         if not Confirm.ask("Continue anyway?"):
             return
     
@@ -153,7 +293,7 @@ def research(topic, aspects, max_papers, paper_type, recent_only, output_dir, sa
     
     try:
         # Initialize research crew
-        console.print("[cyan]🚀 Initializing research crew...[/cyan]")
+        console.print("[cyan]🚀 Initializing research crew with OpenAlex & CrossRef...[/cyan]")
         crew = ResearchCrew()
         
         # Execute research with progress tracking
@@ -220,8 +360,9 @@ def research(topic, aspects, max_papers, paper_type, recent_only, output_dir, sa
         # Provide troubleshooting hints
         console.print("\n[yellow]💡 Troubleshooting tips:[/yellow]")
         console.print("   - Check your internet connection")
-        console.print("   - Verify API keys are valid")
+        console.print("   - Verify LLM API keys (Google/OpenAI)")
         console.print("   - Try reducing --max-papers")
+        console.print("   - Run 'python main.py test-apis' to check API connections")
         console.print("   - Run with --verbose for detailed logs")
 
 def display_research_results(results):
@@ -242,6 +383,14 @@ def display_research_results(results):
     
     console.print(summary_table)
     
+    # Show data source breakdown
+    if 'source_breakdown' in results:
+        breakdown = results['source_breakdown']
+        console.print(f"\n[bold cyan]📚 Data Sources:[/bold cyan]")
+        console.print(f"   • OpenAlex: {breakdown.get('openalex', 0)} papers")
+        console.print(f"   • CrossRef: {breakdown.get('crossref', 0)} papers") 
+        console.print(f"   • ArXiv: {breakdown.get('arxiv', 0)} papers")
+    
     # Show quality indicators
     papers_found = stats.get('papers_found', 0)
     notes_extracted = stats.get('notes_extracted', 0)
@@ -256,7 +405,8 @@ def display_research_results(results):
         console.print("\n[bold cyan]📚 Top Papers Found:[/bold cyan]")
         for i, paper in enumerate(results['papers'][:5], 1):
             year = paper.published_date.year if hasattr(paper, 'published_date') and paper.published_date else 'N/A'
-            console.print(f"{i}. [bold]{paper.title}[/bold] ({year})")
+            source = getattr(paper, 'source', 'Unknown')
+            console.print(f"{i}. [bold]{paper.title}[/bold] ({year}) [{source}]")
             if hasattr(paper, 'authors') and paper.authors:
                 authors_str = ', '.join(paper.authors[:3])
                 if len(paper.authors) > 3:
@@ -289,7 +439,6 @@ def search_papers(query, limit, sort_by):
     """Search papers in the database"""
     try:
         with console.status(f"Searching for '{query}'..."):
-            # Fixed: Remove the sort_by parameter that was causing the error
             papers = db.search_papers(query, limit, sort_by)
         
         if not papers:
@@ -298,9 +447,10 @@ def search_papers(query, limit, sort_by):
             return
         
         papers_table = Table(title=f"Search Results for '{query}' (sorted by {sort_by})", show_header=True)
-        papers_table.add_column("Title", style="cyan", max_width=50)
-        papers_table.add_column("Authors", style="green", max_width=30)
+        papers_table.add_column("Title", style="cyan", max_width=40)
+        papers_table.add_column("Authors", style="green", max_width=25)
         papers_table.add_column("Year", style="yellow", justify="center")
+        papers_table.add_column("Source", style="magenta", justify="center")
         papers_table.add_column("Citations", style="red", justify="right")
         
         for paper in papers:
@@ -310,11 +460,13 @@ def search_papers(query, limit, sort_by):
             
             year = str(paper.published_date.year) if hasattr(paper, 'published_date') and paper.published_date else 'N/A'
             citations = str(getattr(paper, 'citations', 0))
+            source = getattr(paper, 'source', 'Unknown')
             
             papers_table.add_row(
-                paper.title[:47] + "..." if len(paper.title) > 50 else paper.title,
+                paper.title[:37] + "..." if len(paper.title) > 40 else paper.title,
                 authors_str,
                 year,
+                source,
                 citations
             )
         
@@ -332,7 +484,6 @@ def list_themes(min_frequency, limit):
     """List research themes in the database"""
     try:
         with console.status("Fetching research themes..."):
-            # Fixed: Pass parameters correctly to match method signature
             themes = db.get_themes(min_frequency=min_frequency, limit=limit)
         
         if not themes:
@@ -444,6 +595,7 @@ def interactive():
 - [green]search <query>[/green] - Search papers in database
 - [green]themes[/green] - List research themes
 - [green]config[/green] - Show configuration
+- [green]test-apis[/green] - Test API connections
 - [green]clear[/green] - Clear screen
 - [green]exit[/green] - Exit interactive mode
 
@@ -474,11 +626,11 @@ def interactive():
                 query = command[7:].strip()
                 if query:
                     try:
-                        # Fixed: Call search_papers with correct parameters
                         papers = db.search_papers(query, limit=10, sort_by='relevance')
                         console.print(f"[green]Found {len(papers)} papers for '{query}'[/green]")
                         for i, paper in enumerate(papers[:5], 1):
-                            console.print(f"{i}. {paper.title}")
+                            source = getattr(paper, 'source', 'Unknown')
+                            console.print(f"{i}. {paper.title} [{source}]")
                     except Exception as e:
                         console.print(f"[red]Search error: {e}[/red]")
                         logger.error(f"Search error: {e}", exc_info=True)
@@ -489,7 +641,7 @@ def interactive():
                 topic = command[9:].strip()
                 if topic:
                     if not crew:
-                        console.print("[cyan]🚀 Initializing research crew...[/cyan]")
+                        console.print("[cyan]🚀 Initializing research crew with OpenAlex & CrossRef...[/cyan]")
                         crew = ResearchCrew()
                     
                     console.print(f"[green]Starting research on: {topic}[/green]")
@@ -509,7 +661,6 @@ def interactive():
             
             elif command.lower() == 'themes':
                 try:
-                    # Fixed: Call get_themes with correct parameters
                     themes = db.get_themes(min_frequency=1, limit=10)
                     console.print(f"[green]Found {len(themes)} themes:[/green]")
                     for i, theme in enumerate(themes[:10], 1):

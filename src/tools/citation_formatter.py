@@ -19,17 +19,23 @@ class CitationFormatter:
             # Clean the last name
             last_name = re.sub(r'[^a-z]', '', last_name)
             
-            return f"{last_name}{year}"
+            # Handle potential duplicates by adding counter
+            base_key = f"{last_name}{year}"
+            return base_key
             
         except Exception as e:
             logger.error(f"Error generating citation key: {e}")
-            return f"paper{self.citation_counter}"
+            key = f"paper{self.citation_counter}"
+            self.citation_counter += 1
+            return key
     
     def format_apa(self, paper: Paper) -> str:
         """Format citation in APA style"""
         try:
             # Authors
-            if len(paper.authors) == 1:
+            if not paper.authors:
+                authors = "Unknown Author"
+            elif len(paper.authors) == 1:
                 authors = paper.authors[0]
             elif len(paper.authors) <= 7:
                 authors = ", ".join(paper.authors[:-1]) + f", & {paper.authors[-1]}"
@@ -46,9 +52,13 @@ class CitationFormatter:
             if paper.venue:
                 source = f"*{paper.venue}*"
             elif paper.arxiv_id:
-                source = "arXiv preprint"
+                source = "*arXiv preprint*"
+            elif "openalex" in paper.id:
+                source = "*Academic Database*"
+            elif "crossref" in paper.id:
+                source = "*CrossRef Database*"
             else:
-                source = "Retrieved from " + paper.url
+                source = "*Retrieved from web*"
             
             # DOI or URL
             if paper.doi:
@@ -89,6 +99,10 @@ class CitationFormatter:
                 source = f"*{paper.venue}*"
             elif paper.arxiv_id:
                 source = "*arXiv*"
+            elif "openalex" in paper.id:
+                source = "*OpenAlex*"
+            elif "crossref" in paper.id:
+                source = "*CrossRef*"
             else:
                 source = "*Web*"
             
@@ -99,7 +113,10 @@ class CitationFormatter:
                 date = "n.d."
             
             # URL
-            url = paper.url
+            if paper.doi:
+                url = f"https://doi.org/{paper.doi}"
+            else:
+                url = paper.url
             
             return f"{authors}. {title} {source}, {date}, {url}."
             
@@ -143,6 +160,12 @@ class CitationFormatter:
             if paper.arxiv_id:
                 bibtex += f"  archivePrefix={{arXiv}},\n"
                 bibtex += f"  eprint={{{paper.arxiv_id}}},\n"
+            
+            # Add note about data source
+            if "openalex" in paper.id:
+                bibtex += f"  note={{Retrieved from OpenAlex}},\n"
+            elif "crossref" in paper.id:
+                bibtex += f"  note={{Retrieved from CrossRef}},\n"
             
             bibtex += f"  url={{{paper.url}}}\n"
             bibtex += "}"
