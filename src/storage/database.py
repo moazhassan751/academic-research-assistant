@@ -2,6 +2,8 @@ import sqlite3
 import sqlite_utils
 from pathlib import Path
 from typing import List, Optional, Dict, Any
+import threading
+from contextlib import contextmanager
 from .models import Paper, ResearchNote, ResearchTheme, Citation
 from ..utils.config import config
 from ..utils.logging import logger
@@ -9,80 +11,134 @@ from ..utils.logging import logger
 class DatabaseManager:
     def __init__(self, db_path: Optional[str] = None):
         self.db_path = db_path or config.get('storage.database_path', 'data/research.db')
-        self.db = sqlite_utils.Database(self.db_path)
+        
+        # Create data directory if it doesn't exist
+        Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
+        
+        # Thread-local storage for database connections
+        self._local = threading.local()
+        
         # Keep track of column names for each table - initialize BEFORE _initialize_tables()
         self._column_cache = {}
+        
+        # Initialize tables using the main thread connection
         self._initialize_tables()
     
-    def _initialize_tables(self):
-        """Initialize database tables"""
-        # Papers table
-        self.db.executescript("""
-            CREATE TABLE IF NOT EXISTS papers (
-                id TEXT PRIMARY KEY,
-                title TEXT NOT NULL,
-                authors TEXT,
-                abstract TEXT,
-                url TEXT,
-                published_date TEXT,
-                venue TEXT,
-                citations INTEGER DEFAULT 0,
-                pdf_path TEXT,
-                full_text TEXT,
-                keywords TEXT,
-                doi TEXT,
-                arxiv_id TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-            
-            CREATE TABLE IF NOT EXISTS research_notes (
-                id TEXT PRIMARY KEY,
-                paper_id TEXT,
-                content TEXT NOT NULL,
-                note_type TEXT,
-                confidence REAL DEFAULT 0.0,
-                page_number INTEGER,
-                created_at TEXT,
-                FOREIGN KEY (paper_id) REFERENCES papers (id)
-            );
-            
-            CREATE TABLE IF NOT EXISTS research_themes (
-                id TEXT PRIMARY KEY,
-                title TEXT NOT NULL,
-                description TEXT,
-                papers TEXT,
-                frequency INTEGER DEFAULT 0,
-                confidence REAL DEFAULT 0.0,
-                related_themes TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-            
-            CREATE TABLE IF NOT EXISTS citations (
-                id TEXT PRIMARY KEY,
-                paper_id TEXT,
-                citation_key TEXT,
-                apa_format TEXT,
-                mla_format TEXT,
-                bibtex TEXT,
-                FOREIGN KEY (paper_id) REFERENCES papers (id)
-            );
-            
-            CREATE INDEX IF NOT EXISTS idx_papers_title ON papers(title);
-            CREATE INDEX IF NOT EXISTS idx_notes_paper_id ON research_notes(paper_id);
-            CREATE INDEX IF NOT EXISTS idx_themes_frequency ON research_themes(frequency);
-        """)
-        
-        # Cache column names for each table
-        self._cache_column_names()
-        logger.info(f"Database initialized at: {self.db_path}")
+    def _get_db(self) -> sqlite_utils.Database:
+        """Get thread-local database connection"""
+        if not hasattr(self._local, 'db') or self._local.db is None:
+            # Create thread-local connection - removed connect_kwargs for compatibility
+            self._local.db = sqlite_utils.Database(self.db_path, recreate=False)
+            logger.debug(f"Created thread-local database connection for thread {threading.get_ident()}")
+        return self._local.db
     
-    def _cache_column_names(self):
+    def _get_raw_connection(self) -> sqlite3.Connection:
+        """Get raw SQLite connection for thread-local use"""
+        if not hasattr(self._local, 'raw_conn') or self._local.raw_conn is None:
+            self._local.raw_conn = sqlite3.Connection(
+                self.db_path,
+                check_same_thread=False,
+                timeout=30.0
+            )
+            # Enable row factory for named access
+            self._local.raw_conn.row_factory = sqlite3.Row
+            logger.debug(f"Created thread-local raw connection for thread {threading.get_ident()}")
+        return self._local.raw_conn
+    
+    @contextmanager
+    def _transaction(self):
+        """Context manager for database transactions with thread safety"""
+        conn = self._get_raw_connection()
+        try:
+            yield conn
+            conn.commit()
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"Database transaction failed: {e}")
+            raise
+    
+    def _initialize_tables(self):
+        """Initialize database tables with thread safety"""
+        try:
+            # Use a simple connection for initialization - removed connect_kwargs
+            init_db = sqlite_utils.Database(self.db_path)
+            
+            init_db.executescript("""
+                CREATE TABLE IF NOT EXISTS papers (
+                    id TEXT PRIMARY KEY,
+                    title TEXT NOT NULL,
+                    authors TEXT,
+                    abstract TEXT,
+                    url TEXT,
+                    published_date TEXT,
+                    venue TEXT,
+                    citations INTEGER DEFAULT 0,
+                    pdf_path TEXT,
+                    full_text TEXT,
+                    keywords TEXT,
+                    doi TEXT,
+                    arxiv_id TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+                
+                CREATE TABLE IF NOT EXISTS research_notes (
+                    id TEXT PRIMARY KEY,
+                    paper_id TEXT,
+                    content TEXT NOT NULL,
+                    note_type TEXT,
+                    confidence REAL DEFAULT 0.0,
+                    page_number INTEGER,
+                    created_at TEXT,
+                    FOREIGN KEY (paper_id) REFERENCES papers (id)
+                );
+                
+                CREATE TABLE IF NOT EXISTS research_themes (
+                    id TEXT PRIMARY KEY,
+                    title TEXT NOT NULL,
+                    description TEXT,
+                    papers TEXT,
+                    frequency INTEGER DEFAULT 0,
+                    confidence REAL DEFAULT 0.0,
+                    related_themes TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+                
+                CREATE TABLE IF NOT EXISTS citations (
+                    id TEXT PRIMARY KEY,
+                    paper_id TEXT,
+                    citation_key TEXT,
+                    apa_format TEXT,
+                    mla_format TEXT,
+                    bibtex TEXT,
+                    FOREIGN KEY (paper_id) REFERENCES papers (id)
+                );
+                
+                CREATE INDEX IF NOT EXISTS idx_papers_title ON papers(title);
+                CREATE INDEX IF NOT EXISTS idx_notes_paper_id ON research_notes(paper_id);
+                CREATE INDEX IF NOT EXISTS idx_themes_frequency ON research_themes(frequency);
+            """)
+            
+            # Cache column names for each table
+            self._cache_column_names(init_db)
+            
+            # Close the initialization connection
+            init_db.close()
+            
+            logger.info(f"Database initialized at: {self.db_path}")
+            
+        except Exception as e:
+            logger.error(f"Error initializing database: {e}")
+            raise
+    
+    def _cache_column_names(self, db_conn=None):
         """Cache column names for each table to handle raw tuple/list rows"""
+        db = db_conn or self._get_db()
         tables = ['papers', 'research_notes', 'research_themes', 'citations']
+        
         for table_name in tables:
             try:
                 # Get column information
-                cursor = self.db.execute(f"PRAGMA table_info({table_name})")
+                cursor = db.execute(f"PRAGMA table_info({table_name})")
                 columns = [row[1] for row in cursor.fetchall()]  # Column names are in index 1
                 self._column_cache[table_name] = columns
                 logger.debug(f"Cached columns for {table_name}: {columns}")
@@ -91,7 +147,7 @@ class DatabaseManager:
                 self._column_cache[table_name] = []
     
     def _row_to_dict(self, row, table_name: str = None) -> Dict[str, Any]:
-        """Safely convert a database row to dictionary"""
+        """Safely convert a database row to dictionary with enhanced thread safety"""
         try:
             if hasattr(row, 'keys') and hasattr(row, '__getitem__'):
                 # sqlite_utils Row object or sqlite3.Row
@@ -140,7 +196,7 @@ class DatabaseManager:
                 'keywords': row_dict.get('keywords', []),
                 'doi': row_dict.get('doi'),
                 'arxiv_id': row_dict.get('arxiv_id'),
-                'created_at': row_dict.get('created_at')  # This field now exists in Paper model
+                'created_at': row_dict.get('created_at')
             }
             
             # Skip papers with empty or invalid IDs
@@ -155,22 +211,25 @@ class DatabaseManager:
             logger.debug(f"Problematic row_dict: {row_dict}")
             return None
     
-    # Paper operations
+    # Paper operations with thread safety
     def save_paper(self, paper: Paper) -> bool:
-        """Save a paper to the database"""
+        """Save a paper to the database with thread safety"""
         try:
-            self.db['papers'].insert(paper.to_dict(), replace=True)
-            return True
+            with self._transaction():
+                db = self._get_db()
+                db['papers'].insert(paper.to_dict(), replace=True)
+                logger.debug(f"Saved paper: {paper.title[:50]}...")
+                return True
         except Exception as e:
             logger.error(f"Error saving paper {paper.id}: {e}")
             return False
     
     def get_paper(self, paper_id: str) -> Optional[Paper]:
-        """Get a paper by ID"""
+        """Get a paper by ID with thread safety"""
         try:
-            # Use sqlite_utils table interface
+            db = self._get_db()
             try:
-                row = self.db['papers'].get(paper_id)
+                row = db['papers'].get(paper_id)
                 if row:
                     row_dict = self._row_to_dict(row, 'papers')
                     return self._safe_create_paper(row_dict)
@@ -182,7 +241,7 @@ class DatabaseManager:
             return None
     
     def search_papers(self, query: str, limit: int = 50, sort_by: str = 'relevance') -> List[Paper]:
-        """Search papers by title or abstract with sorting and enhanced error handling"""
+        """Search papers by title or abstract with sorting and thread safety"""
         try:
             # Build ORDER BY clause based on sort_by parameter
             if sort_by == 'date':
@@ -190,7 +249,7 @@ class DatabaseManager:
             elif sort_by == 'citations':
                 order_clause = "ORDER BY citations DESC"
             else:  # relevance (default)
-                order_clause = "ORDER BY citations DESC"  # Use citations as proxy for relevance
+                order_clause = "ORDER BY citations DESC"
             
             sql = f"""
                 SELECT * FROM papers 
@@ -199,8 +258,8 @@ class DatabaseManager:
                 LIMIT ?
             """
             
-            # Use raw SQL execution to get consistent results
-            cursor = self.db.execute(sql, [f"%{query}%", f"%{query}%", limit])
+            conn = self._get_raw_connection()
+            cursor = conn.execute(sql, [f"%{query}%", f"%{query}%", limit])
             rows = cursor.fetchall()
             
             papers = []
@@ -208,9 +267,9 @@ class DatabaseManager:
                 try:
                     # Convert row to dict with table context
                     row_dict = self._row_to_dict(row, 'papers')
-                    if row_dict:  # Only proceed if conversion was successful
+                    if row_dict:
                         paper = self._safe_create_paper(row_dict)
-                        if paper:  # Only add if paper creation was successful
+                        if paper:
                             papers.append(paper)
                 except Exception as e:
                     logger.warning(f"Error processing paper row: {e}")
@@ -224,11 +283,11 @@ class DatabaseManager:
             return []
     
     def get_all_papers(self) -> List[Paper]:
-        """Get all papers with enhanced error handling"""
+        """Get all papers with thread safety"""
         try:
             papers = []
-            # Use raw SQL for consistency
-            cursor = self.db.execute("SELECT * FROM papers ORDER BY created_at DESC")
+            conn = self._get_raw_connection()
+            cursor = conn.execute("SELECT * FROM papers ORDER BY created_at DESC")
             rows = cursor.fetchall()
             
             for row in rows:
@@ -248,20 +307,24 @@ class DatabaseManager:
             logger.error(f"Error getting all papers: {e}")
             return []
     
-    # Note operations
+    # Note operations with thread safety
     def save_note(self, note: ResearchNote) -> bool:
-        """Save a research note"""
+        """Save a research note with thread safety"""
         try:
-            self.db['research_notes'].insert(note.to_dict(), replace=True)
-            return True
+            with self._transaction():
+                db = self._get_db()
+                db['research_notes'].insert(note.to_dict(), replace=True)
+                logger.debug(f"Saved note: {note.id}")
+                return True
         except Exception as e:
             logger.error(f"Error saving note {note.id}: {e}")
             return False
     
     def get_notes_for_paper(self, paper_id: str) -> List[ResearchNote]:
-        """Get all notes for a specific paper"""
+        """Get all notes for a specific paper with thread safety"""
         try:
-            cursor = self.db.execute(
+            conn = self._get_raw_connection()
+            cursor = conn.execute(
                 "SELECT * FROM research_notes WHERE paper_id = ?", 
                 [paper_id]
             )
@@ -283,12 +346,39 @@ class DatabaseManager:
             logger.error(f"Error getting notes for paper {paper_id}: {e}")
             return []
     
-    # Theme operations
-    def save_theme(self, theme: ResearchTheme) -> bool:
-        """Save a research theme"""
+    def get_all_notes(self) -> List[ResearchNote]:
+        """Get all research notes with thread safety"""
         try:
-            self.db['research_themes'].insert(theme.to_dict(), replace=True)
-            return True
+            notes = []
+            conn = self._get_raw_connection()
+            cursor = conn.execute("SELECT * FROM research_notes ORDER BY created_at DESC")
+            rows = cursor.fetchall()
+            
+            for row in rows:
+                try:
+                    row_dict = self._row_to_dict(row, 'research_notes')
+                    if row_dict:
+                        note = ResearchNote(**row_dict)
+                        notes.append(note)
+                except Exception as e:
+                    logger.warning(f"Error converting note row: {e}")
+                    continue
+                    
+            logger.info(f"Retrieved {len(notes)} notes")
+            return notes
+        except Exception as e:
+            logger.error(f"Error getting all notes: {e}")
+            return []
+    
+    # Theme operations with thread safety
+    def save_theme(self, theme: ResearchTheme) -> bool:
+        """Save a research theme with thread safety"""
+        try:
+            with self._transaction():
+                db = self._get_db()
+                db['research_themes'].insert(theme.to_dict(), replace=True)
+                logger.debug(f"Saved theme: {theme.title}")
+                return True
         except Exception as e:
             logger.error(f"Error saving theme {theme.id}: {e}")
             return False
@@ -303,7 +393,8 @@ class DatabaseManager:
                 sql += " LIMIT ?"
                 params.append(limit)
             
-            cursor = self.db.execute(sql, params)
+            conn = self._get_raw_connection()
+            cursor = conn.execute(sql, params)
             rows = cursor.fetchall()
             
             themes = []
@@ -324,20 +415,24 @@ class DatabaseManager:
             logger.error(f"Error getting themes: {e}")
             return []
     
-    # Citation operations
+    # Citation operations with thread safety
     def save_citation(self, citation: Citation) -> bool:
-        """Save a citation"""
+        """Save a citation with thread safety"""
         try:
-            self.db['citations'].insert(citation.to_dict(), replace=True)
-            return True
+            with self._transaction():
+                db = self._get_db()
+                db['citations'].insert(citation.to_dict(), replace=True)
+                logger.debug(f"Saved citation: {citation.citation_key}")
+                return True
         except Exception as e:
             logger.error(f"Error saving citation {citation.id}: {e}")
             return False
     
     def get_citation(self, paper_id: str) -> Optional[Citation]:
-        """Get citation for a paper"""
+        """Get citation for a paper with thread safety"""
         try:
-            cursor = self.db.execute(
+            conn = self._get_raw_connection()
+            cursor = conn.execute(
                 "SELECT * FROM citations WHERE paper_id = ?", 
                 [paper_id]
             )
@@ -354,14 +449,15 @@ class DatabaseManager:
             return None
     
     def get_stats(self) -> Dict[str, int]:
-        """Get database statistics"""
+        """Get database statistics with thread safety"""
         try:
             stats = {}
             tables = ['papers', 'research_notes', 'research_themes', 'citations']
             
+            conn = self._get_raw_connection()
             for table in tables:
                 try:
-                    cursor = self.db.execute(f"SELECT COUNT(*) FROM {table}")
+                    cursor = conn.execute(f"SELECT COUNT(*) FROM {table}")
                     count = cursor.fetchone()[0]
                     stats[table.replace('research_', '')] = count
                 except Exception as e:
@@ -374,116 +470,27 @@ class DatabaseManager:
             logger.error(f"Error getting stats: {e}")
             return {}
     
-    def diagnose_data_issues(self):
-        """Diagnose and log data issues for debugging"""
+    def close_connections(self):
+        """Close thread-local connections"""
         try:
-            logger.info("Running database diagnostics...")
-            
-            # Check papers table
-            cursor = self.db.execute("SELECT COUNT(*) FROM papers")
-            paper_count = cursor.fetchone()[0]
-            logger.info(f"Total papers in database: {paper_count}")
-            
-            if paper_count > 0:
-                # Sample a few papers to check for issues
-                cursor = self.db.execute("SELECT * FROM papers LIMIT 5")
-                sample_rows = cursor.fetchall()
+            if hasattr(self._local, 'db') and self._local.db is not None:
+                self._local.db.close()
+                self._local.db = None
                 
-                valid_papers = 0
-                for i, row in enumerate(sample_rows):
-                    try:
-                        row_dict = self._row_to_dict(row, 'papers')
-                        paper = self._safe_create_paper(row_dict)
-                        if paper:
-                            valid_papers += 1
-                            logger.info(f"Sample paper {i+1}: {paper.title[:50]}...")
-                        else:
-                            logger.warning(f"Sample paper {i+1}: Failed to create Paper object")
-                    except Exception as e:
-                        logger.error(f"Sample paper {i+1}: Error - {e}")
+            if hasattr(self._local, 'raw_conn') and self._local.raw_conn is not None:
+                self._local.raw_conn.close()
+                self._local.raw_conn = None
                 
-                logger.info(f"Valid papers in sample: {valid_papers}/{len(sample_rows)}")
-            
-            # Check column structure
-            cursor = self.db.execute("PRAGMA table_info(papers)")
-            columns = cursor.fetchall()
-            logger.info(f"Papers table columns: {[col[1] for col in columns]}")
-            
+            logger.debug(f"Closed database connections for thread {threading.get_ident()}")
         except Exception as e:
-            logger.error(f"Error during diagnostics: {e}")
+            logger.error(f"Error closing connections: {e}")
     
-    def clear_corrupted_data(self):
-        """Clear potentially corrupted data - use with caution"""
+    def __del__(self):
+        """Cleanup when object is destroyed"""
         try:
-            # Check for and clean up malformed rows
-            logger.info("Checking for corrupted data...")
-            
-            # Test each table for corruption
-            tables = ['papers', 'research_notes', 'research_themes', 'citations']
-            for table_name in tables:
-                try:
-                    cursor = self.db.execute(f"SELECT * FROM {table_name}")
-                    rows = cursor.fetchall()
-                    clean_rows = []
-                    corrupted_count = 0
-                    
-                    for row in rows:
-                        try:
-                            # Try to convert each row
-                            row_dict = self._row_to_dict(row, table_name)
-                            if row_dict:
-                                if table_name == 'papers':
-                                    paper = self._safe_create_paper(row_dict)
-                                    if paper:
-                                        clean_rows.append(row_dict)
-                                    else:
-                                        corrupted_count += 1
-                                else:
-                                    clean_rows.append(row_dict)
-                            else:
-                                corrupted_count += 1
-                        except Exception:
-                            corrupted_count += 1
-                    
-                    if corrupted_count > 0:
-                        logger.warning(f"Found {corrupted_count} corrupted rows in {table_name}")
-                    else:
-                        logger.info(f"Table {table_name} is clean ({len(clean_rows)} rows)")
-                        
-                except Exception as e:
-                    logger.error(f"Error checking table {table_name}: {e}")
-                    
-        except Exception as e:
-            logger.error(f"Error during corruption check: {e}")
-    
-    def test_data_retrieval(self):
-        """Test data retrieval to diagnose issues"""
-        logger.info("Testing data retrieval...")
-        
-        try:
-            # Run diagnostics first
-            self.diagnose_data_issues()
-            
-            # Test raw counts
-            stats = self.get_stats()
-            logger.info(f"Database stats: {stats}")
-            
-            # Test themes retrieval
-            themes = self.get_themes(min_frequency=0)  # Get all themes
-            logger.info(f"Retrieved {len(themes)} themes")
-            
-            if themes:
-                logger.info(f"Sample theme: {themes[0].title}")
-            
-            # Test papers search
-            papers = self.search_papers("quantum", limit=5)
-            logger.info(f"Found {len(papers)} papers for 'quantum' search")
-            
-            if papers:
-                logger.info(f"Sample paper: {papers[0].title}")
-                
-        except Exception as e:
-            logger.error(f"Error during data retrieval test: {e}")
+            self.close_connections()
+        except:
+            pass
 
 # Global database instance
 db = DatabaseManager()
