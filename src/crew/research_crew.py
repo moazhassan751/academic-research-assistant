@@ -1,6 +1,9 @@
 from crewai import Crew, Task, Process
 from typing import List, Dict, Any, Optional, Callable
 from datetime import datetime, timedelta
+import time
+import asyncio
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from ..agents.literature_survey_agent import LiteratureSurveyAgent
 from ..agents.note_taking_agent import NoteTakingAgent
 from ..agents.theme_synthesizer_agent import ThemeSynthesizerAgent
@@ -9,36 +12,215 @@ from ..agents.citation_generator_agent import CitationGeneratorAgent
 from ..storage.database import db
 from ..utils.logging import logger
 from ..utils.config import config
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 class ResearchCrew:
     def __init__(self):
-        # Initialize all agents
-        self.literature_agent = LiteratureSurveyAgent()
-        self.note_agent = NoteTakingAgent()
-        self.theme_agent = ThemeSynthesizerAgent()
-        self.draft_agent = DraftWriterAgent()
-        self.citation_agent = CitationGeneratorAgent()
+        # Initialize all agents with error handling
+        try:
+            self.literature_agent = LiteratureSurveyAgent()
+            self.note_agent = NoteTakingAgent()
+            self.theme_agent = ThemeSynthesizerAgent()
+            self.draft_agent = DraftWriterAgent()
+            self.citation_agent = CitationGeneratorAgent()
+            
+            # Configuration for resilience
+            self.max_workflow_retries = config.get('research.max_retries', 3)
+            self.step_timeout = config.get('research.step_timeout', 1800)  # 30 minutes per step
+            self.api_cooldown_time = config.get('research.api_cooldown', 120)  # 2 minutes
+            self.parallel_processing = config.get('research.parallel_processing', True)
+            self.checkpoint_enabled = config.get('research.checkpoint_enabled', True)
+            
+            logger.info("Research crew initialized with all agents")
+            
+        except Exception as e:
+            logger.error(f"Failed to initialize research crew: {e}")
+            raise
+    
+    def _save_checkpoint(self, step_name: str, data: Dict[str, Any], research_topic: str):
+        """Save workflow checkpoint for recovery"""
+        if not self.checkpoint_enabled:
+            return
         
-        logger.info("Research crew initialized with all agents")
+        try:
+            checkpoint_path = config.get('storage.cache_dir', 'data/cache')
+            checkpoint_file = f"{checkpoint_path}/checkpoint_{research_topic}_{step_name}.json"
+            
+            import json
+            from pathlib import Path
+            Path(checkpoint_path).mkdir(parents=True, exist_ok=True)
+            
+            checkpoint_data = {
+                'timestamp': datetime.now().isoformat(),
+                'step': step_name,
+                'topic': research_topic,
+                'data': data
+            }
+            
+            with open(checkpoint_file, 'w') as f:
+                json.dump(checkpoint_data, f, indent=2, default=str)
+            
+            logger.debug(f"Checkpoint saved for step: {step_name}")
+            
+        except Exception as e:
+            logger.warning(f"Failed to save checkpoint for {step_name}: {e}")
+    
+    def _load_checkpoint(self, step_name: str, research_topic: str) -> Optional[Dict[str, Any]]:
+        """Load workflow checkpoint for recovery"""
+        if not self.checkpoint_enabled:
+            return None
+        
+        try:
+            checkpoint_path = config.get('storage.cache_dir', 'data/cache')
+            checkpoint_file = f"{checkpoint_path}/checkpoint_{research_topic}_{step_name}.json"
+            
+            from pathlib import Path
+            if not Path(checkpoint_file).exists():
+                return None
+            
+            import json
+            with open(checkpoint_file, 'r') as f:
+                checkpoint_data = json.load(f)
+            
+            # Check if checkpoint is recent (within 24 hours)
+            checkpoint_time = datetime.fromisoformat(checkpoint_data['timestamp'])
+            if datetime.now() - checkpoint_time > timedelta(hours=24):
+                logger.info(f"Checkpoint for {step_name} is too old, ignoring")
+                return None
+            
+            logger.info(f"Loaded checkpoint for step: {step_name}")
+            return checkpoint_data['data']
+            
+        except Exception as e:
+            logger.warning(f"Failed to load checkpoint for {step_name}: {e}")
+            return None
+    
+    def _clear_checkpoints(self, research_topic: str):
+        """Clear all checkpoints for a research topic"""
+        try:
+            checkpoint_path = config.get('storage.cache_dir', 'data/cache')
+            from pathlib import Path
+            import glob
+            
+            pattern = f"{checkpoint_path}/checkpoint_{research_topic}_*.json"
+            for file_path in glob.glob(pattern):
+                Path(file_path).unlink(missing_ok=True)
+            
+            logger.debug(f"Cleared checkpoints for topic: {research_topic}")
+            
+        except Exception as e:
+            logger.warning(f"Failed to clear checkpoints: {e}")
+    
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=2, min=30, max=300),
+        retry=retry_if_exception_type((Exception,))
+    )
+    def _execute_step_with_retry(self, step_func, step_name: str, *args, **kwargs):
+        """Execute a workflow step with retry logic"""
+        try:
+            logger.info(f"Executing step: {step_name}")
+            start_time = time.time()
+            
+            result = step_func(*args, **kwargs)
+            
+            execution_time = time.time() - start_time
+            logger.info(f"Step {step_name} completed in {execution_time:.2f} seconds")
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error in step {step_name}: {e}")
+            
+            # Apply cooldown for API-related errors
+            error_msg = str(e).lower()
+            if any(keyword in error_msg for keyword in ['timeout', '503', 'unavailable', 'quota', 'rate']):
+                logger.info(f"API-related error detected, applying cooldown of {self.api_cooldown_time} seconds")
+                time.sleep(self.api_cooldown_time)
+            
+            raise
+    
+    def _process_papers_in_batches(self, papers: List, batch_size: int = 3, 
+                                 process_func: Callable = None, research_topic: str = "") -> List:
+        """Process papers in batches to avoid overwhelming the API"""
+        if not process_func or not papers:
+            return []
+        
+        results = []
+        total_batches = len(papers) // batch_size + (1 if len(papers) % batch_size else 0)
+        
+        for i in range(0, len(papers), batch_size):
+            batch = papers[i:i + batch_size]
+            batch_num = i // batch_size + 1
+            
+            logger.info(f"Processing batch {batch_num}/{total_batches} ({len(batch)} papers)")
+            
+            try:
+                if self.parallel_processing and len(batch) > 1:
+                    # Process batch in parallel with reduced concurrency
+                    with ThreadPoolExecutor(max_workers=min(2, len(batch))) as executor:
+                        future_to_paper = {
+                            executor.submit(process_func, paper, research_topic): paper 
+                            for paper in batch
+                        }
+                        
+                        for future in as_completed(future_to_paper, timeout=self.step_timeout):
+                            try:
+                                result = future.result(timeout=300)  # 5 minute timeout per paper
+                                if result:
+                                    if isinstance(result, list):
+                                        results.extend(result)
+                                    else:
+                                        results.append(result)
+                            except Exception as e:
+                                paper = future_to_paper[future]
+                                logger.warning(f"Failed to process paper {getattr(paper, 'title', 'Unknown')}: {e}")
+                else:
+                    # Sequential processing for small batches or when parallel is disabled
+                    for paper in batch:
+                        try:
+                            result = process_func(paper, research_topic)
+                            if result:
+                                if isinstance(result, list):
+                                    results.extend(result)
+                                else:
+                                    results.append(result)
+                        except Exception as e:
+                            logger.warning(f"Failed to process paper {getattr(paper, 'title', 'Unknown')}: {e}")
+                            continue
+                
+                # Add delay between batches to respect rate limits
+                if batch_num < total_batches:
+                    delay = min(30, 10 * batch_num)  # Progressive delay
+                    logger.debug(f"Waiting {delay} seconds before next batch")
+                    time.sleep(delay)
+                
+            except Exception as e:
+                logger.error(f"Error processing batch {batch_num}: {e}")
+                # Continue with next batch rather than failing completely
+                continue
+        
+        return results
     
     def create_tasks(self, research_topic: str, specific_aspects: List[str] = None,
                     max_papers: int = 100, paper_type: str = "survey") -> List[Task]:
-        """Create tasks for the research workflow"""
+        """Create tasks for the research workflow with enhanced error handling"""
         
         tasks = []
         
-        # Task 1: Literature Survey
+        # Task 1: Literature Survey with timeout and retry
         literature_task = Task(
             description=f"""
             Conduct a comprehensive literature survey on the topic: {research_topic}
             
             Requirements:
             - Search multiple academic databases (arXiv, OpenAlex, CrossRef)
-            - Find {max_papers} most relevant papers
+            - Find {max_papers} most relevant papers with resilient error handling
             - Filter and rank papers by relevance
             - Focus on recent publications (last 5 years preferred)
-            - Save all papers to the database
+            - Save all papers to the database with checkpointing
             - Remove duplicates based on DOI and title similarity
+            - Handle API timeouts and rate limits gracefully
             
             Specific aspects to focus on: {specific_aspects or ['general overview']}
             
@@ -49,17 +231,19 @@ class ResearchCrew:
         )
         tasks.append(literature_task)
         
-        # Task 2: Note Taking
+        # Task 2: Note Taking with batch processing
         note_taking_task = Task(
             description=f"""
             Extract comprehensive notes from the collected papers on: {research_topic}
             
             Requirements:
-            - Process each paper's content (abstract, full text if available)
-            - Extract key findings, methodologies, and insights
+            - Process papers in small batches to avoid API overload
+            - Extract key findings, methodologies, and insights with retry logic
             - Identify limitations and future work directions
             - Categorize notes by type (finding, methodology, limitation, etc.)
-            - Save all notes to the database
+            - Save all notes to the database with error recovery
+            - Handle partial failures gracefully
+            - Apply rate limiting between API calls
             
             Focus on insights relevant to: {research_topic}
             
@@ -71,18 +255,19 @@ class ResearchCrew:
         )
         tasks.append(note_taking_task)
         
-        # Task 3: Theme Synthesis
+        # Task 3: Theme Synthesis with fallback options
         theme_synthesis_task = Task(
             description=f"""
             Synthesize research themes and identify patterns from the extracted notes
             
             Requirements:
-            - Cluster similar notes and findings
+            - Cluster similar notes and findings with error tolerance
             - Identify major research themes and trends
-            - Synthesize coherent theme descriptions
+            - Synthesize coherent theme descriptions with retry mechanisms
             - Identify research gaps and opportunities
             - Calculate theme frequencies and confidence scores
-            - Save themes to the database
+            - Save themes to the database with checkpointing
+            - Handle incomplete data gracefully
             
             Research topic: {research_topic}
             
@@ -94,18 +279,19 @@ class ResearchCrew:
         )
         tasks.append(theme_synthesis_task)
         
-        # Task 4: Citation Generation
+        # Task 4: Citation Generation with enhanced error handling
         citation_task = Task(
             description=f"""
             Generate properly formatted citations for all collected papers
             
             Requirements:
-            - Create citations in APA, MLA, and BibTeX formats
+            - Create citations in APA, MLA, and BibTeX formats with fallbacks
             - Enhance citations using CrossRef data when DOI is available
-            - Generate unique citation keys
+            - Generate unique citation keys with collision handling
             - Validate citation completeness and format
-            - Create a master bibliography
-            - Save citations to the database
+            - Create a master bibliography with error recovery
+            - Save citations to the database with transaction safety
+            - Handle missing metadata gracefully
             
             Papers collected for: {research_topic}
             
@@ -117,18 +303,20 @@ class ResearchCrew:
         )
         tasks.append(citation_task)
         
-        # Task 5: Draft Writing
+        # Task 5: Draft Writing with enhanced safety measures
         draft_writing_task = Task(
             description=f"""
             Generate a comprehensive academic {paper_type} paper draft
             
             Requirements:
-            - Create structured outline based on research themes
-            - Write abstract, introduction, and conclusion
+            - Create structured outline based on research themes with error handling
+            - Write abstract, introduction, and conclusion with retry logic
             - Generate sections for each major theme
             - Include proper academic language and flow
-            - Insert citation placeholders
+            - Insert citation placeholders with validation
             - Synthesize findings into coherent narrative
+            - Handle partial content gracefully
+            - Apply content safety measures to avoid API blocks
             
             Paper details:
             - Topic: {research_topic}
@@ -150,8 +338,9 @@ class ResearchCrew:
                                  max_papers: int = 100,
                                  paper_type: str = "survey",
                                  date_from: Optional[datetime] = None,
-                                 progress_callback: Optional[Callable[[int, str], None]] = None) -> Dict[str, Any]:
-        """Execute the complete research workflow
+                                 progress_callback: Optional[Callable[[int, str], None]] = None,
+                                 resume_from_checkpoint: bool = True) -> Dict[str, Any]:
+        """Execute the complete research workflow with enhanced error handling and recovery
         
         Args:
             research_topic: The main research topic
@@ -160,100 +349,219 @@ class ResearchCrew:
             paper_type: Type of paper to generate (survey, review, analysis)
             date_from: Optional date filter for papers
             progress_callback: Optional callback function for progress updates
-                              Called with (step_number, description)
+            resume_from_checkpoint: Whether to resume from saved checkpoints
         """
         
         logger.info(f"Starting research workflow for: {research_topic}")
         start_time = datetime.now()
         
+        # Clean topic for file naming
+        clean_topic = "".join(c for c in research_topic if c.isalnum() or c in (' ', '-', '_')).strip()
+        
         def update_progress(step: int, description: str):
-            """Helper function to update progress"""
+            """Helper function to update progress with error handling"""
             if progress_callback:
                 try:
                     progress_callback(step, description)
                 except Exception as e:
                     logger.warning(f"Progress callback error: {e}")
         
+        # Track progress through workflow
+        workflow_state = {
+            'papers': None,
+            'notes': None,
+            'themes': None,
+            'gaps': None,
+            'citations': None,
+            'draft': None
+        }
+        
         try:
-            # Step 1: Literature Survey
+            # Step 1: Literature Survey with checkpoint recovery
             logger.info("Step 1: Conducting literature survey...")
             update_progress(1, "Searching academic databases (ArXiv, OpenAlex, CrossRef)...")
             
-            papers = self.literature_agent.conduct_literature_survey(
-                research_topic, specific_aspects, max_papers, date_from
-            )
+            if resume_from_checkpoint:
+                checkpoint_papers = self._load_checkpoint('literature_survey', clean_topic)
+                if checkpoint_papers:
+                    logger.info("Resuming from literature survey checkpoint")
+                    workflow_state['papers'] = checkpoint_papers
+                    update_progress(1, f"Resumed from checkpoint: {len(checkpoint_papers)} papers")
             
-            if not papers:
-                logger.error("No papers found. Aborting workflow.")
-                return {
-                    'success': False,
-                    'error': 'No papers found for the given topic',
-                    'research_topic': research_topic,
-                    'execution_time': str(datetime.now() - start_time)
-                }
+            if not workflow_state['papers']:
+                papers = self._execute_step_with_retry(
+                    self.literature_agent.conduct_comprehensive_literature_survey,
+                    "literature_survey",
+                    research_topic, specific_aspects, max_papers, paper_type, date_from
+                )
+                
+                if not papers:
+                    error_msg = 'No papers found for the given topic'
+                    logger.error(error_msg)
+                    return {
+                        'success': False,
+                        'error': error_msg,
+                        'research_topic': research_topic,
+                        'execution_time': str(datetime.now() - start_time)
+                    }
+                
+                workflow_state['papers'] = papers
+                self._save_checkpoint('literature_survey', papers, clean_topic)
             
+            papers = workflow_state['papers']
             update_progress(1, f"Found {len(papers)} relevant papers")
             
-            # Step 2: Note Taking
+            # Step 2: Note Taking with batch processing and checkpoint recovery
             logger.info("Step 2: Extracting research notes...")
             update_progress(2, "Extracting key insights from papers...")
             
-            notes = self.note_agent.process_multiple_papers(papers, research_topic)
+            if resume_from_checkpoint:
+                checkpoint_notes = self._load_checkpoint('note_taking', clean_topic)
+                if checkpoint_notes:
+                    logger.info("Resuming from note taking checkpoint")
+                    workflow_state['notes'] = checkpoint_notes
+                    update_progress(2, f"Resumed from checkpoint: {len(checkpoint_notes)} notes")
             
+            if not workflow_state['notes']:
+                # Process papers in smaller batches for better resilience
+                notes = self._process_papers_in_batches(
+                    papers, 
+                    batch_size=2,  # Smaller batches for better stability
+                    process_func=lambda paper, topic: self.note_agent.extract_notes_from_paper(paper, topic),
+                    research_topic=research_topic
+                )
+                
+                workflow_state['notes'] = notes
+                self._save_checkpoint('note_taking', notes, clean_topic)
+            
+            notes = workflow_state['notes']
             update_progress(2, f"Extracted {len(notes)} research notes")
             
-            # Step 3: Theme Synthesis
+            # Step 3: Theme Synthesis with checkpoint recovery
             logger.info("Step 3: Synthesizing research themes...")
             update_progress(3, "Identifying research themes and patterns...")
             
-            synthesis_result = self.theme_agent.synthesize_research_landscape(notes)
-            themes = synthesis_result['themes']
-            gaps = synthesis_result['gaps']
+            if resume_from_checkpoint:
+                checkpoint_synthesis = self._load_checkpoint('theme_synthesis', clean_topic)
+                if checkpoint_synthesis:
+                    logger.info("Resuming from theme synthesis checkpoint")
+                    workflow_state['themes'] = checkpoint_synthesis['themes']
+                    workflow_state['gaps'] = checkpoint_synthesis['gaps']
+                    update_progress(3, f"Resumed from checkpoint: {len(checkpoint_synthesis['themes'])} themes")
             
+            if not workflow_state['themes']:
+                synthesis_result = self._execute_step_with_retry(
+                    self.theme_agent.synthesize_research_landscape,
+                    "theme_synthesis",
+                    notes
+                )
+                
+                workflow_state['themes'] = synthesis_result['themes']
+                workflow_state['gaps'] = synthesis_result['gaps']
+                self._save_checkpoint('theme_synthesis', synthesis_result, clean_topic)
+            
+            themes = workflow_state['themes']
+            gaps = workflow_state['gaps']
             update_progress(3, f"Identified {len(themes)} research themes")
             
-            # Step 4: Citation Generation
+            # Step 4: Citation Generation with checkpoint recovery
             logger.info("Step 4: Generating citations...")
             update_progress(4, "Generating formatted citations with CrossRef enhancement...")
             
-            citations = self.citation_agent.generate_citations_for_papers(papers)
+            if resume_from_checkpoint:
+                checkpoint_citations = self._load_checkpoint('citations', clean_topic)
+                if checkpoint_citations:
+                    logger.info("Resuming from citations checkpoint")
+                    workflow_state['citations'] = checkpoint_citations
+                    update_progress(4, f"Resumed from checkpoint: {len(checkpoint_citations)} citations")
             
+            if not workflow_state['citations']:
+                citations = self._execute_step_with_retry(
+                    self.citation_agent.generate_citations_for_papers,
+                    "citations",
+                    papers
+                )
+                
+                workflow_state['citations'] = citations
+                self._save_checkpoint('citations', citations, clean_topic)
+            
+            citations = workflow_state['citations']
             update_progress(4, f"Generated {len(citations)} citations")
             
-            # Step 5: Draft Writing
+            # Step 5: Draft Writing with enhanced safety measures
             logger.info("Step 5: Writing paper draft...")
             update_progress(5, "Composing academic paper draft...")
             
-            draft = self.draft_agent.compile_full_draft(
-                research_topic, themes, papers, notes, gaps
-            )
+            if resume_from_checkpoint:
+                checkpoint_draft = self._load_checkpoint('draft_writing', clean_topic)
+                if checkpoint_draft:
+                    logger.info("Resuming from draft writing checkpoint")
+                    workflow_state['draft'] = checkpoint_draft
+                    update_progress(5, "Resumed from draft checkpoint")
             
-            # Insert citations into draft
+            if not workflow_state['draft']:
+                draft = self._execute_step_with_retry(
+                    self.draft_agent.compile_full_draft,
+                    "draft_writing",
+                    research_topic, themes, papers, notes, gaps
+                )
+                
+                workflow_state['draft'] = draft
+                self._save_checkpoint('draft_writing', draft, clean_topic)
+            
+            draft = workflow_state['draft']
+            
+            # Step 6: Insert citations with error handling
             logger.info("Step 6: Inserting citations...")
             update_progress(5, "Inserting citations into draft...")
             
-            for section_key, section_content in draft['sections'].items():
-                if isinstance(section_content, dict) and 'content' in section_content:
-                    draft['sections'][section_key]['content'] = \
-                        self.citation_agent.insert_inline_citations(
-                            section_content['content'], citations
-                        )
-                elif isinstance(section_content, str):
-                    draft['sections'][section_key] = \
-                        self.citation_agent.insert_inline_citations(section_content, citations)
-            
-            # Generate bibliography
-            bibliography = self.citation_agent.create_bibliography(citations, 'apa')
-            draft['bibliography'] = bibliography
-            
-            # Generate citation quality report
-            citation_report = self.citation_agent.generate_citation_report(citations)
+            try:
+                # Enhanced citation insertion with retry logic
+                for section_key, section_content in draft['sections'].items():
+                    try:
+                        if isinstance(section_content, dict) and 'content' in section_content:
+                            draft['sections'][section_key]['content'] = \
+                                self.citation_agent.insert_inline_citations(
+                                    section_content['content'], citations
+                                )
+                        elif isinstance(section_content, str):
+                            draft['sections'][section_key] = \
+                                self.citation_agent.insert_inline_citations(section_content, citations)
+                    except Exception as e:
+                        logger.warning(f"Failed to insert citations in section {section_key}: {e}")
+                        # Continue with other sections
+                        continue
+                
+                # Generate bibliography with error handling
+                try:
+                    bibliography = self.citation_agent.create_bibliography(citations, 'apa')
+                    draft['bibliography'] = bibliography
+                except Exception as e:
+                    logger.warning(f"Failed to generate bibliography: {e}")
+                    draft['bibliography'] = "Bibliography generation failed due to API limitations."
+                
+                # Generate citation quality report
+                try:
+                    citation_report = self.citation_agent.generate_citation_report(citations)
+                except Exception as e:
+                    logger.warning(f"Failed to generate citation report: {e}")
+                    citation_report = "Citation report generation failed."
+                
+            except Exception as e:
+                logger.error(f"Error during citation processing: {e}")
+                # Continue without citations rather than failing completely
+                citation_report = "Citation processing encountered errors."
+                bibliography = "Bibliography generation failed."
             
             # Calculate execution time
             execution_time = datetime.now() - start_time
             
             # Final progress update
             update_progress(5, "Research workflow completed successfully!")
+            
+            # Clear checkpoints on successful completion
+            if resume_from_checkpoint:
+                self._clear_checkpoints(clean_topic)
             
             # Compile final results
             results = {
@@ -273,8 +581,8 @@ class ResearchCrew:
                 'gaps': gaps,
                 'citations': citations,
                 'draft': draft,
-                'bibliography': bibliography,
-                'citation_report': citation_report
+                'bibliography': bibliography if 'bibliography' in locals() else "Not available",
+                'citation_report': citation_report if 'citation_report' in locals() else "Not available"
             }
             
             logger.info(f"Research workflow completed successfully in {execution_time}")
@@ -283,102 +591,268 @@ class ResearchCrew:
         except Exception as e:
             logger.error(f"Error in research workflow: {e}")
             update_progress(0, f"Error occurred: {str(e)}")
-            return {
+            
+            # Return partial results if available
+            partial_results = {
                 'success': False,
                 'error': str(e),
                 'research_topic': research_topic,
-                'execution_time': str(datetime.now() - start_time)
+                'execution_time': str(datetime.now() - start_time),
+                'partial_data': {
+                    'papers': workflow_state.get('papers'),
+                    'notes': workflow_state.get('notes'),
+                    'themes': workflow_state.get('themes'),
+                    'gaps': workflow_state.get('gaps')
+                }
             }
+            
+            return partial_results
     
     def save_results(self, results: Dict[str, Any], output_dir: str = None) -> str:
-        """Save research results to files"""
+        """Save research results to files with enhanced error handling"""
         from pathlib import Path
         import json
         
-        if not output_dir:
-            output_dir = config.get('storage.outputs_dir', 'data/outputs')
-        
-        output_path = Path(output_dir)
-        output_path.mkdir(parents=True, exist_ok=True)
-        
-        # Create timestamped directory
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        topic_clean = "".join(c for c in results['research_topic'] if c.isalnum() or c in (' ', '-', '_')).rstrip()
-        project_dir = output_path / f"{topic_clean}_{timestamp}"
-        project_dir.mkdir(exist_ok=True)
-        
-        # Save complete results as JSON
-        with open(project_dir / "research_results.json", 'w') as f:
-            # Convert objects to dictionaries for JSON serialization
-            json_results = {
-                'success': results['success'],
-                'research_topic': results['research_topic'],
-                'execution_time': results['execution_time'],
-                'statistics': results['statistics'],
-                'gaps': results.get('gaps', [])
-            }
-            json.dump(json_results, f, indent=2, default=str)
-        
-        # Save paper draft as markdown
-        if 'draft' in results:
-            draft_content = self.format_draft_as_markdown(results['draft'])
-            with open(project_dir / "paper_draft.md", 'w') as f:
-                f.write(draft_content)
-        
-        # Save bibliography
-        if 'bibliography' in results:
-            with open(project_dir / "bibliography.txt", 'w') as f:
-                f.write(results['bibliography'])
-        
-        # Save citation report
-        if 'citation_report' in results:
-            with open(project_dir / "citation_report.txt", 'w') as f:
-                f.write(results['citation_report'])
-        
-        # Save papers list
-        if 'papers' in results:
-            papers_content = "\n".join([
-                f"- {paper.title} ({paper.published_date.year if paper.published_date else 'n.d.'})\n  Authors: {', '.join(paper.authors[:3]) if paper.authors else 'Unknown'}\n  Source: {paper.id.split('_')[0].upper()}\n  DOI: {paper.doi or 'N/A'}\n"
-                for paper in results['papers']
-            ])
-            with open(project_dir / "papers_list.txt", 'w') as f:
-                f.write(papers_content)
-        
-        logger.info(f"Results saved to: {project_dir}")
-        return str(project_dir)
+        try:
+            if not output_dir:
+                output_dir = config.get('storage.outputs_dir', 'data/outputs')
+            
+            output_path = Path(output_dir)
+            output_path.mkdir(parents=True, exist_ok=True)
+            
+            # Create timestamped directory
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            topic_clean = "".join(c for c in results['research_topic'] if c.isalnum() or c in (' ', '-', '_')).rstrip()
+            project_dir = output_path / f"{topic_clean}_{timestamp}"
+            project_dir.mkdir(exist_ok=True)
+            
+            # Save complete results as JSON with error handling
+            try:
+                json_results = {
+                    'success': results['success'],
+                    'research_topic': results['research_topic'],
+                    'execution_time': results['execution_time'],
+                    'statistics': results.get('statistics', {}),
+                    'gaps': results.get('gaps', []),
+                    'error': results.get('error', None),
+                    'partial_data': results.get('partial_data', {})
+                }
+                
+                with open(project_dir / "research_results.json", 'w', encoding='utf-8') as f:
+                    json.dump(json_results, f, indent=2, default=str, ensure_ascii=False)
+                logger.info("Research results JSON saved successfully")
+                
+            except Exception as e:
+                logger.error(f"Failed to save research results JSON: {e}")
+            
+            # Save paper draft as markdown with error handling
+            if 'draft' in results and results['draft']:
+                try:
+                    draft_content = self.format_draft_as_markdown(results['draft'])
+                    with open(project_dir / "paper_draft.md", 'w', encoding='utf-8') as f:
+                        f.write(draft_content)
+                    logger.info("Paper draft saved successfully")
+                except Exception as e:
+                    logger.error(f"Failed to save paper draft: {e}")
+            
+            # Save bibliography with error handling
+            if 'bibliography' in results and results['bibliography']:
+                try:
+                    with open(project_dir / "bibliography.txt", 'w', encoding='utf-8') as f:
+                        f.write(results['bibliography'])
+                    logger.info("Bibliography saved successfully")
+                except Exception as e:
+                    logger.error(f"Failed to save bibliography: {e}")
+            
+            # Save citation report with error handling
+            if 'citation_report' in results and results['citation_report']:
+                try:
+                    with open(project_dir / "citation_report.txt", 'w', encoding='utf-8') as f:
+                        f.write(results['citation_report'])
+                    logger.info("Citation report saved successfully")
+                except Exception as e:
+                    logger.error(f"Failed to save citation report: {e}")
+            
+            # Save papers list with error handling
+            if 'papers' in results and results['papers']:
+                try:
+                    papers_content = "\n".join([
+                        f"- {getattr(paper, 'title', 'Unknown Title')} ({getattr(paper.published_date, 'year', 'n.d.') if hasattr(paper, 'published_date') and paper.published_date else 'n.d.'})\n  Authors: {', '.join(getattr(paper, 'authors', [])[:3]) if hasattr(paper, 'authors') and paper.authors else 'Unknown'}\n  Source: {getattr(paper, 'id', 'Unknown').split('_')[0].upper() if hasattr(paper, 'id') and paper.id else 'Unknown'}\n  DOI: {getattr(paper, 'doi', 'N/A') if hasattr(paper, 'doi') else 'N/A'}\n"
+                        for paper in results['papers']
+                    ])
+                    with open(project_dir / "papers_list.txt", 'w', encoding='utf-8') as f:
+                        f.write(papers_content)
+                    logger.info("Papers list saved successfully")
+                except Exception as e:
+                    logger.error(f"Failed to save papers list: {e}")
+            
+            logger.info(f"Results saved to: {project_dir}")
+            return str(project_dir)
+            
+        except Exception as e:
+            logger.error(f"Failed to save results: {e}")
+            return f"Error saving results: {e}"
     
     def format_draft_as_markdown(self, draft: Dict[str, Any]) -> str:
-        """Format draft as markdown document"""
-        md_content = f"# {draft['title']}\n\n"
-        
-        # Abstract
-        md_content += "## Abstract\n\n"
-        md_content += draft['abstract'] + "\n\n"
-        
-        # Introduction
-        md_content += "## 1. Introduction\n\n"
-        md_content += draft['introduction'] + "\n\n"
-        
-        # Theme sections
-        section_num = 2
-        for key, section in draft['sections'].items():
-            if key.startswith('theme_') and isinstance(section, dict):
-                md_content += f"## {section_num}. {section['title']}\n\n"
-                md_content += section['content'] + "\n\n"
+        """Format draft as markdown document with error handling"""
+        try:
+            md_content = f"# {draft.get('title', 'Research Paper Draft')}\n\n"
+            
+            # Abstract
+            if 'abstract' in draft and draft['abstract']:
+                md_content += "## Abstract\n\n"
+                md_content += str(draft['abstract']) + "\n\n"
+            
+            # Introduction
+            if 'introduction' in draft and draft['introduction']:
+                md_content += "## 1. Introduction\n\n"
+                md_content += str(draft['introduction']) + "\n\n"
+            
+            # Theme sections
+            section_num = 2
+            if 'sections' in draft and draft['sections']:
+                for key, section in draft['sections'].items():
+                    try:
+                        if key.startswith('theme_') and isinstance(section, dict):
+                            title = section.get('title', f'Theme Section {section_num}')
+                            content = section.get('content', 'Content unavailable')
+                            md_content += f"## {section_num}. {title}\n\n"
+                            md_content += str(content) + "\n\n"
+                            section_num += 1
+                    except Exception as e:
+                        logger.warning(f"Error formatting section {key}: {e}")
+                        continue
+            
+            # Discussion
+            if 'discussion' in draft and draft['discussion']:
+                md_content += f"## {section_num}. Discussion\n\n"
+                md_content += str(draft['discussion']) + "\n\n"
                 section_num += 1
+            
+            # Conclusion
+            if 'conclusion' in draft and draft['conclusion']:
+                md_content += f"## {section_num}. Conclusion\n\n"
+                md_content += str(draft['conclusion']) + "\n\n"
+            
+            # Bibliography
+            if 'bibliography' in draft and draft['bibliography']:
+                md_content += "## References\n\n"
+                md_content += str(draft['bibliography']) + "\n\n"
+            
+            return md_content
+            
+        except Exception as e:
+            logger.error(f"Error formatting draft as markdown: {e}")
+            return f"# Research Paper Draft\n\nError formatting content: {e}\n\nRaw data available in JSON format."
+    
+    def get_workflow_status(self, research_topic: str) -> Dict[str, Any]:
+        """Get the current status of a workflow from checkpoints"""
+        clean_topic = "".join(c for c in research_topic if c.isalnum() or c in (' ', '-', '_')).strip()
         
-        # Discussion
-        md_content += f"## {section_num}. Discussion\n\n"
-        md_content += draft['discussion'] + "\n\n"
-        section_num += 1
+        steps = ['literature_survey', 'note_taking', 'theme_synthesis', 'citations', 'draft_writing']
+        status = {}
         
-        # Conclusion
-        md_content += f"## {section_num}. Conclusion\n\n"
-        md_content += draft['conclusion'] + "\n\n"
+        for step in steps:
+            checkpoint = self._load_checkpoint(step, clean_topic)
+            status[step] = {
+                'completed': checkpoint is not None,
+                'timestamp': checkpoint.get('timestamp') if checkpoint else None,
+                'data_size': len(checkpoint.get('data', [])) if checkpoint and isinstance(checkpoint.get('data'), list) else 0
+            }
         
-        # Bibliography
-        if 'bibliography' in draft:
-            md_content += "## References\n\n"
-            md_content += draft['bibliography'] + "\n\n"
+        return {
+            'topic': research_topic,
+            'steps': status,
+            'overall_progress': sum(1 for s in status.values() if s['completed']) / len(steps) * 100
+        }
+    
+    def cleanup_failed_workflow(self, research_topic: str) -> bool:
+        """Clean up checkpoints and temporary files from a failed workflow"""
+        try:
+            clean_topic = "".join(c for c in research_topic if c.isalnum() or c in (' ', '-', '_')).strip()
+            self._clear_checkpoints(clean_topic)
+            
+            # Also clean up any temporary cache files
+            cache_path = config.get('storage.cache_dir', 'data/cache')
+            from pathlib import Path
+            import glob
+            
+            temp_pattern = f"{cache_path}/temp_{clean_topic}_*.json"
+            for file_path in glob.glob(temp_pattern):
+                Path(file_path).unlink(missing_ok=True)
+            
+            logger.info(f"Cleaned up failed workflow data for: {research_topic}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to cleanup workflow data: {e}")
+            return False
+    
+    def validate_workflow_integrity(self, results: Dict[str, Any]) -> Dict[str, Any]:
+        """Validate the integrity and completeness of workflow results"""
+        validation_report = {
+            'valid': True,
+            'issues': [],
+            'warnings': [],
+            'completeness_score': 0
+        }
         
-        return md_content
+        required_fields = ['research_topic', 'execution_time', 'statistics']
+        optional_fields = ['papers', 'notes', 'themes', 'gaps', 'citations', 'draft']
+        
+        # Check required fields
+        for field in required_fields:
+            if field not in results:
+                validation_report['valid'] = False
+                validation_report['issues'].append(f"Missing required field: {field}")
+        
+        # Check data completeness
+        completeness_checks = 0
+        total_checks = len(optional_fields)
+        
+        for field in optional_fields:
+            if field in results and results[field]:
+                completeness_checks += 1
+            else:
+                validation_report['warnings'].append(f"Missing or empty optional field: {field}")
+        
+        validation_report['completeness_score'] = (completeness_checks / total_checks) * 100
+        
+        # Check data quality
+        if 'statistics' in results:
+            stats = results['statistics']
+            
+            if stats.get('papers_found', 0) == 0:
+                validation_report['issues'].append("No papers were found")
+            
+            if stats.get('notes_extracted', 0) == 0:
+                validation_report['warnings'].append("No research notes were extracted")
+            
+            if stats.get('themes_identified', 0) == 0:
+                validation_report['warnings'].append("No research themes were identified")
+        
+        # Check for errors
+        if 'error' in results:
+            validation_report['valid'] = False
+            validation_report['issues'].append(f"Workflow error: {results['error']}")
+        
+        # Check execution time reasonableness
+        if 'execution_time' in results:
+            try:
+                exec_time = results['execution_time']
+                if isinstance(exec_time, str):
+                    # Parse time string like "0:28:03.914554"
+                    time_parts = exec_time.split(':')
+                    if len(time_parts) >= 2:
+                        hours = int(time_parts[0])
+                        minutes = int(time_parts[1])
+                        total_minutes = hours * 60 + minutes
+                        
+                        if total_minutes > 180:  # More than 3 hours
+                            validation_report['warnings'].append("Execution time seems unusually long")
+                        elif total_minutes < 5:  # Less than 5 minutes
+                            validation_report['warnings'].append("Execution time seems unusually short")
+            except Exception as e:
+                validation_report['warnings'].append(f"Could not validate execution time: {e}")
+        
+        return validation_report
