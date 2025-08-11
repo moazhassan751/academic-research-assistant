@@ -1,3 +1,4 @@
+# Core dependencies
 crewai==0.28.0
 google-generativeai>=0.3.0
 openai>=1.3.0
@@ -7,19 +8,35 @@ pydantic>=2.0.0
 rich>=13.0.0
 click>=8.1.0
 streamlit>=1.28.0
-PyPDF2>=3.0.0
-pdfplumber>=0.9.0
 python-dotenv>=1.0.0
 sqlite-utils>=3.35.0
 bibtexparser>=1.4.0
 httpx>=0.25.0
 tenacity>=8.2.0
 
+# PDF processing dependencies
+PyPDF2>=3.0.0
+pdfplumber>=0.9.0
+
 # Export format dependencies
 reportlab>=4.0.0          # PDF generation
 python-docx>=0.8.11       # Word document generation
-pdfkit>=1.0.0             # HTML to PDF conversion
+pdfkit>=1.0.0             # HTML to PDF conversion (requires wkhtmltopdf)
 jinja2>=3.1.0             # Template engine
 psutil>=5.9.0             # System monitoring
-pdfkit>=1.0.0             # HTML to PDF conversion (requires wkhtmltopdf)
-jinja2>=3.1.0             # Template engine for advanced formatting
+
+# Development and testing dependencies
+pytest>=7.0.0             # Testing framework
+pytest-asyncio>=0.21.0    # Async testing support
+pytest-mock>=3.10.0       # Mocking support
+pytest-cov>=4.0.0         # Coverage reporting
+black>=23.0.0             # Code formatting
+flake8>=6.0.0             # Linting
+mypy>=1.0.0               # Type checking
+
+# Database optimization
+aiosqlite>=0.19.0         # Async SQLite support
+
+# Async API processing
+aiohttp>=3.9.0            # Async HTTP client
+backoff>=2.2.0            # Exponential backoff for retries

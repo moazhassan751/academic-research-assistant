@@ -5,10 +5,10 @@ echo "🔧 Installing Academic Research Assistant Export Dependencies..."
 
 # Install Python dependencies
 echo "📦 Installing Python packages..."
-pip install reportlab>=4.0.0
-pip install python-docx>=0.8.11
-pip install pdfkit>=1.0.0
-pip install jinja2>=3.1.0
+pip install reportlab
+pip install python-docx
+pip install pdfkit
+pip install jinja2
 
 # Check if wkhtmltopdf is installed (required for pdfkit)
 if command -v wkhtmltopdf &> /dev/null; then
