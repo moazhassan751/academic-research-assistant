@@ -1,83 +1,76 @@
-# LLM Configuration
-llm:
-  development:
-    provider: "gemini"
-    model: "gemini-2.5-flash"
-    temperature: 0.1
-    max_tokens: 4096
-  
-  production:
-    provider: "gemini"
-    model: "gemini-2.5-flash"
-    temperature: 0.1
-    max_tokens: 4096
+# Academic Research Assistant Configuration
+# Minimal configuration matching expected schema
 
-# API Configuration - FIXED
+# API Configuration
 apis:
-  arxiv:
-    base_url: "http://export.arxiv.org/api/query"
-    max_results: 50  # Reduced from 100 for better performance
-    delay: 3  # seconds between requests
-    timeout: 60  # Added timeout
-  
   openalex:
-    base_url: "https://api.openalex.org/works"
-    mailto: "rmoazhassan555@gmail.com"  # FIXED: Added explicit mailto for OpenAlex
-    rate_limit: 5  # Reduced from 10 to be more conservative
+    base_url: "https://api.openalex.org"
+    rate_limit: 10
     timeout: 30
-    user_agent: "AcademicResearchAssistant/1.0 (mailto:rmoazhassan555@gmail.com)"
-    max_results: 200  # Added max results limit
-  
+    
   crossref:
     base_url: "https://api.crossref.org/works"
-    mailto: "rmoazhassan555@gmail.com"  # Required for CrossRef politeness policy
-    rate_limit: 1  # Be conservative with rate limiting
+    rate_limit: 50
     timeout: 30
-    max_results: 100  # Added max results limit
-    rate_limit_delay: 1.5
-    max_results_per_query: 25  # Reduced to prevent overload
-    use_select_parameter: false 
 
+# LLM Configuration  
+llm:
+  provider: "gemini"
+  model: "gemini-1.5-flash-002"
+  temperature: 0.1
+  max_tokens: 8192
+  api_key: ""
 
-# Storage Configuration
-storage:
-  database_path: "data/research.db"
-  papers_dir: "data/papers"
-  cache_dir: "data/cache"
-  outputs_dir: "data/outputs"
-  batch_size: 20  # Added for batch operations
-
-# Agent Configuration - ENHANCED
-agents:
-  max_retries: 2  # Reduced from 3
-  timeout: 120  # Increased from 300 seconds for individual operations
-  verbose: true
-  max_concurrent_searches: 2  # Added limit for parallel searches
-  search_timeout: 60  # Added search timeout
-
-# Research Configuration - ENHANCED
-research:
-  max_papers_default: 50
-  min_confidence_threshold: 0.5
-  max_queries_per_database: 3  # Limit queries to prevent timeouts
-  min_papers_per_query: 5  # Minimum papers to consider query successful
-  deduplication:
-    title_similarity_threshold: 0.85
-    abstract_similarity_threshold: 0.90
+# Database Configuration
+database:
+  path: "data/research.db"
+  backup_enabled: true
+  backup_interval: 3600
+  max_connections: 10
+  connection_timeout: 30
+  optimize_on_startup: true
   
 # Logging Configuration
 logging:
   level: "INFO"
-  file: "logs/research_assistant.log"
-  max_file_size: "10MB"
+  file_enabled: true
+  file_path: "logs/research_assistant.log"
+  console_enabled: true
+  structured_logging: true
+  max_file_size: 10485760
   backup_count: 5
-  console_level: "INFO"  # Added console logging level
 
-# Performance Configuration - NEW
-performance:
-  enable_parallel_search: false  # Default to sequential for stability
-  max_concurrent_requests: 2
+# Research Configuration
+research:
+  max_papers_per_search: 50
+  default_search_providers: ["openalex", "crossref", "semantic_scholar"]
+  concurrent_requests: 2
+  search_timeout: 120
+  note_confidence_threshold: 0.5
+  theme_frequency_threshold: 3
+
+# Export Configuration
+export:
+  output_directory: "data/outputs"
+  default_formats: ["pdf", "docx"]
+  pdf_settings:
+    page_size: "A4"
+    margin: "1in"
+    font_size: 12
+  docx_settings:
+    font_name: "Calibri"
+    font_size: 11
+  max_file_size: 104857600
+
+# Security Configuration
+security:
+  api_key_encryption: true
+  ssl_verify: true
   request_timeout: 30
-  retry_attempts: 2
-  backoff_factor: 2
-  batch_processing: true
+  max_request_size: 10485760
+  allowed_domains:
+    - "api.openalex.org"
+    - "api.crossref.org"
+    - "api.semanticscholar.org"
+    - "export.arxiv.org"
+    - "generativelanguage.googleapis.com"
