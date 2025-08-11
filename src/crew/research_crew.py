@@ -12,6 +12,7 @@ from ..agents.citation_generator_agent import CitationGeneratorAgent
 from ..storage.database import db
 from ..utils.logging import logger
 from ..utils.config import config
+from ..utils.export_manager import export_manager
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 class ResearchCrew:
@@ -36,6 +37,15 @@ class ResearchCrew:
         except Exception as e:
             logger.error(f"Failed to initialize research crew: {e}")
             raise
+    
+    def get_supported_export_formats(self) -> Dict[str, bool]:
+        """Get dictionary of supported export formats and their availability"""
+        return export_manager.get_supported_formats()
+    
+    def get_available_export_formats(self) -> List[str]:
+        """Get list of available export formats (only those with dependencies installed)"""
+        formats = export_manager.get_supported_formats()
+        return [fmt for fmt, available in formats.items() if available]
     
     def _save_checkpoint(self, step_name: str, data: Dict[str, Any], research_topic: str):
         """Save workflow checkpoint for recovery"""
@@ -608,14 +618,27 @@ class ResearchCrew:
             
             return partial_results
     
-    def save_results(self, results: Dict[str, Any], output_dir: str = None) -> str:
-        """Save research results to files with enhanced error handling"""
+    def save_results(self, results: Dict[str, Any], output_dir: str = None, 
+                    export_formats: List[str] = None) -> str:
+        """Save research results to files with enhanced error handling and multiple export formats
+        
+        Args:
+            results: Research results dictionary
+            output_dir: Output directory path
+            export_formats: List of export formats ['markdown', 'pdf', 'docx', 'latex', 'html']
+        
+        Returns:
+            str: Output directory path
+        """
         from pathlib import Path
         import json
         
         try:
             if not output_dir:
                 output_dir = config.get('storage.outputs_dir', 'data/outputs')
+            
+            if export_formats is None:
+                export_formats = ['markdown', 'txt']  # Default formats
             
             output_path = Path(output_dir)
             output_path.mkdir(parents=True, exist_ok=True)
@@ -625,6 +648,8 @@ class ResearchCrew:
             topic_clean = "".join(c for c in results['research_topic'] if c.isalnum() or c in (' ', '-', '_')).rstrip()
             project_dir = output_path / f"{topic_clean}_{timestamp}"
             project_dir.mkdir(exist_ok=True)
+            
+            logger.info(f"Saving results to: {project_dir}")
             
             # Save complete results as JSON with error handling
             try:
@@ -645,24 +670,55 @@ class ResearchCrew:
             except Exception as e:
                 logger.error(f"Failed to save research results JSON: {e}")
             
-            # Save paper draft as markdown with error handling
+            # Save paper draft in multiple formats
             if 'draft' in results and results['draft']:
+                draft_base_path = str(project_dir / "paper_draft")
+                
+                # Export draft in requested formats
+                for format_type in export_formats:
+                    try:
+                        if export_manager.export_draft(results['draft'], draft_base_path, format_type):
+                            logger.info(f"Draft exported successfully as {format_type.upper()}")
+                        else:
+                            logger.warning(f"Failed to export draft as {format_type.upper()}")
+                    except Exception as e:
+                        logger.error(f"Error exporting draft to {format_type}: {e}")
+                
+                # Also save markdown version for backwards compatibility
                 try:
-                    draft_content = self.format_draft_as_markdown(results['draft'])
-                    with open(project_dir / "paper_draft.md", 'w', encoding='utf-8') as f:
-                        f.write(draft_content)
-                    logger.info("Paper draft saved successfully")
+                    if 'markdown' not in export_formats:
+                        draft_content = self.format_draft_as_markdown(results['draft'])
+                        with open(project_dir / "paper_draft.md", 'w', encoding='utf-8') as f:
+                            f.write(draft_content)
+                        logger.info("Legacy markdown draft saved")
                 except Exception as e:
-                    logger.error(f"Failed to save paper draft: {e}")
+                    logger.error(f"Failed to save legacy markdown draft: {e}")
             
-            # Save bibliography with error handling
+            # Save bibliography in multiple formats
             if 'bibliography' in results and results['bibliography']:
+                bib_base_path = str(project_dir / "bibliography")
+                papers = results.get('papers', [])
+                
+                # Export bibliography in requested formats
+                bib_formats = ['txt', 'csv', 'json', 'latex'] if 'pdf' in export_formats or 'docx' in export_formats else ['txt']
+                for format_type in bib_formats:
+                    try:
+                        if export_manager.export_bibliography(
+                            results['bibliography'], papers, bib_base_path, format_type
+                        ):
+                            logger.info(f"Bibliography exported successfully as {format_type.upper()}")
+                        else:
+                            logger.warning(f"Failed to export bibliography as {format_type.upper()}")
+                    except Exception as e:
+                        logger.error(f"Error exporting bibliography to {format_type}: {e}")
+                
+                # Also save text version for backwards compatibility
                 try:
                     with open(project_dir / "bibliography.txt", 'w', encoding='utf-8') as f:
                         f.write(results['bibliography'])
-                    logger.info("Bibliography saved successfully")
+                    logger.info("Legacy bibliography text saved")
                 except Exception as e:
-                    logger.error(f"Failed to save bibliography: {e}")
+                    logger.error(f"Failed to save legacy bibliography: {e}")
             
             # Save citation report with error handling
             if 'citation_report' in results and results['citation_report']:

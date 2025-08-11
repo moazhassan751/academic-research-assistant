@@ -463,10 +463,10 @@ Your research progress and data remain intact."""
                 else:
                     # Response blocked or empty
                     self.consecutive_safety_blocks += 1
-                    logger.warning(f"Attempt {attempt} failed: Response blocked or empty")
+                    logger.warning(f"Attempt {attempt} failed: Response blocked or empty (Safety filter triggered)")
                     
                     if attempt < max_attempts:
-                        wait_time = min(5, attempt * 1.5)
+                        wait_time = min(3, attempt * 1.0)  # Reduced wait time
                         logger.info(f"Retrying with higher safety level after {wait_time}s delay...")
                         time.sleep(wait_time)
                         continue

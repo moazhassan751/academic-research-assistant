@@ -14,6 +14,10 @@ try:
     from src.storage.database import db
     from src.utils.config import config
     from src.utils.logging import setup_logging, logger
+    from src.utils.export_manager import export_manager
+    from src.utils.health_monitor import health_monitor
+    from src.utils.error_handler import error_handler
+    from src.utils.resource_manager import resource_manager
 except ImportError as e:
     print(f"❌ Import Error: {e}")
     print("Make sure you're running from the project root directory and all dependencies are installed.")
@@ -89,6 +93,57 @@ def cli(ctx, verbose):
 def config_info():
     """Display current configuration"""
     display_config_info()
+
+@cli.command()
+def export_formats():
+    """Display available export formats and their status"""
+    try:
+        from src.crew.research_crew import ResearchCrew
+        
+        console.print("[cyan]🔧 Checking export format availability...[/cyan]")
+        
+        crew = ResearchCrew()
+        formats = crew.get_supported_export_formats()
+        
+        format_table = Table(title="Export Format Availability", show_header=True)
+        format_table.add_column("Format", style="cyan")
+        format_table.add_column("Status", style="green")
+        format_table.add_column("Use Case", style="blue")
+        format_table.add_column("Dependencies", style="yellow")
+        
+        format_info = {
+            'markdown': ('✅ Available', 'General documentation', 'Built-in'),
+            'txt': ('✅ Available', 'Plain text output', 'Built-in'),
+            'json': ('✅ Available', 'Data exchange', 'Built-in'),
+            'csv': ('✅ Available', 'Bibliography data', 'Built-in'),
+            'html': ('✅ Available', 'Web viewing', 'Built-in'),
+            'latex': ('✅ Available', 'Academic publishing', 'Built-in'),
+            'pdf': ('PDF generation', 'Professional documents', 'reportlab, pdfkit'),
+            'docx': ('Word documents', 'MS Office compatibility', 'python-docx')
+        }
+        
+        for fmt, available in formats.items():
+            if fmt in format_info:
+                status_text, use_case, deps = format_info[fmt]
+                if not available and fmt in ['pdf', 'docx']:
+                    status = f"❌ Not Available"
+                else:
+                    status = status_text
+                
+                format_table.add_row(fmt.upper(), status, use_case, deps)
+        
+        console.print(format_table)
+        
+        # Installation instructions for missing dependencies
+        unavailable = [fmt for fmt, available in formats.items() if not available]
+        if unavailable:
+            console.print("\n[yellow]💡 To enable missing formats, install dependencies:[/yellow]")
+            console.print("   pip install reportlab python-docx pdfkit")
+            console.print("\n[dim]Note: pdfkit also requires wkhtmltopdf to be installed separately[/dim]")
+        
+    except Exception as e:
+        console.print(f"[red]❌ Error checking export formats: {e}[/red]")
+        logger.error(f"Export formats check error: {e}", exc_info=True)
 
 @cli.command()
 def test_apis():
@@ -250,7 +305,11 @@ def stats():
 @click.option('--output-dir', '-o', help='Output directory for results')
 @click.option('--save-results', '-s', is_flag=True, default=True,
               help='Save results to files')
-def research(topic, aspects, max_papers, paper_type, recent_only, output_dir, save_results):
+@click.option('--export-formats', '-f', multiple=True, 
+              type=click.Choice(['markdown', 'pdf', 'docx', 'latex', 'html', 'txt', 'csv', 'json']),
+              default=['markdown', 'txt'],
+              help='Export formats for drafts and bibliographies (can specify multiple)')
+def research(topic, aspects, max_papers, paper_type, recent_only, output_dir, save_results, export_formats):
     """Conduct comprehensive research on a topic"""
     
     # Validate inputs
@@ -271,6 +330,33 @@ def research(topic, aspects, max_papers, paper_type, recent_only, output_dir, sa
     if max_papers < 5:
         console.print("[yellow]⚠️ Warning: Very few papers requested, results may be limited[/yellow]")
     
+    # Validate export formats
+    crew = ResearchCrew()
+    available_formats = crew.get_available_export_formats()
+    invalid_formats = [fmt for fmt in export_formats if fmt not in available_formats]
+    
+    if invalid_formats:
+        console.print(f"[yellow]⚠️ Warning: Some export formats are not available due to missing dependencies: {', '.join(invalid_formats)}[/yellow]")
+        console.print(f"[dim]Available formats: {', '.join(available_formats)}[/dim]")
+        export_formats = [fmt for fmt in export_formats if fmt in available_formats]
+        
+        if not export_formats:
+            console.print("[red]❌ Error: No valid export formats specified[/red]")
+            return
+    
+    # Smart resource optimization
+    memory_usage = resource_manager.get_memory_usage()
+    if memory_usage > 85:
+        console.print(f"[yellow]⚠️ High memory usage detected: {memory_usage:.1f}%[/yellow]")
+        optimization = resource_manager.optimize_for_large_research(max_papers)
+        recommended_papers = optimization['recommended_max_papers']
+        
+        if recommended_papers < max_papers:
+            console.print(f"[yellow]💡 Recommendation: Reduce --max-papers to {recommended_papers} for better performance[/yellow]")
+            if not Confirm.ask(f"Continue with {max_papers} papers anyway?"):
+                console.print(f"[green]Using recommended limit of {recommended_papers} papers[/green]")
+                max_papers = recommended_papers
+    
     # Prepare parameters
     date_from = datetime.now() - timedelta(days=730) if recent_only else None
     aspects_list = list(aspects) if aspects else None
@@ -282,6 +368,7 @@ def research(topic, aspects, max_papers, paper_type, recent_only, output_dir, sa
         f"[bold]Paper Type:[/bold] {paper_type}\n"
         f"[bold]Recent Only:[/bold] {'Yes' if recent_only else 'No'}\n"
         f"[bold]Save Results:[/bold] {'Yes' if save_results else 'No'}\n"
+        f"[bold]Export Formats:[/bold] {', '.join(export_formats)}\n"
         f"[bold]Output Directory:[/bold] {output_dir or 'Default'}",
         title="Research Parameters",
         border_style="green"
@@ -338,8 +425,9 @@ def research(topic, aspects, max_papers, paper_type, recent_only, output_dir, sa
             # Save results if requested
             if save_results:
                 console.print("\n[cyan]💾 Saving results...[/cyan]")
-                output_path = crew.save_results(results, output_dir)
+                output_path = crew.save_results(results, output_dir, list(export_formats))
                 console.print(f"[green]✅ Results saved to: {output_path}[/green]")
+                console.print(f"[blue]📄 Export formats: {', '.join(export_formats)}[/blue]")
                 
                 # Show saved files
                 if Path(output_path).exists():
@@ -572,6 +660,166 @@ def clear_db():
         logger.error(f"Clear database error: {e}", exc_info=True)
 
 @cli.command()
+def health():
+    """Check system and project health"""
+    try:
+        console.print("[cyan]🔍 Running health check...[/cyan]")
+        
+        with console.status("Checking system health..."):
+            # Get health report
+            report = health_monitor.generate_health_report()
+        
+        # Display the report
+        console.print(report)
+        
+        # Check for critical issues
+        project_health = health_monitor.check_project_health()
+        system_health = health_monitor.get_health_summary()
+        
+        # Provide recommendations
+        if project_health['project_status'] == 'CRITICAL':
+            console.print("\n[red]🚨 CRITICAL ISSUES DETECTED[/red]")
+            console.print("[yellow]Recommendations:[/yellow]")
+            
+            if project_health.get('missing_critical_files'):
+                console.print("   - Restore missing critical files from repository")
+            
+            if project_health.get('missing_directories'):
+                console.print("   - Create missing directories or run setup")
+            
+            if not project_health.get('database_exists'):
+                console.print("   - Initialize database by running any research command")
+        
+        elif system_health['status'] == 'WARNING':
+            console.print("\n[yellow]⚠️ PERFORMANCE WARNINGS[/yellow]")
+            console.print("[blue]Recommendations:[/blue]")
+            console.print("   - Monitor system resources during research")
+            console.print("   - Consider reducing --max-papers for large queries")
+            console.print("   - Close unnecessary applications")
+        
+        else:
+            console.print("\n[green]✅ System is healthy and ready for research![/green]")
+        
+        # Show error statistics if available
+        error_stats = error_handler.get_statistics()
+        if error_stats['total_errors'] > 0:
+            console.print(f"\n[yellow]📊 Error Statistics:[/yellow]")
+            console.print(f"   Total Errors: {error_stats['total_errors']}")
+            console.print(f"   Error Types: {', '.join(error_stats['error_types'].keys())}")
+            
+            if error_stats['time_since_last_error'] < 300:  # Last 5 minutes
+                console.print("   [red]Recent errors detected - check logs for details[/red]")
+        
+        # Show resource recommendations
+        resource_rec = resource_manager.get_system_recommendations()
+        if resource_rec['suggestions']:
+            console.print(f"\n[blue]💡 Resource Optimization Tips:[/blue]")
+            for suggestion in resource_rec['suggestions'][:3]:  # Show top 3
+                console.print(f"   - {suggestion}")
+    
+    except Exception as e:
+        console.print(f"[red]❌ Health check error: {e}[/red]")
+        logger.error(f"Health check error: {e}", exc_info=True)
+
+@cli.command()
+@click.argument('result_dir')
+@click.option('--export-formats', '-f', multiple=True, 
+              type=click.Choice(['markdown', 'pdf', 'docx', 'latex', 'html', 'txt', 'csv', 'json']),
+              default=['pdf', 'docx'],
+              help='Export formats to generate (can specify multiple)')
+def export(result_dir, export_formats):
+    """Export existing research results to different formats"""
+    import json
+    from pathlib import Path
+    
+    result_path = Path(result_dir)
+    
+    if not result_path.exists():
+        console.print(f"[red]❌ Error: Result directory does not exist: {result_dir}[/red]")
+        return
+    
+    # Check for required files
+    json_file = result_path / "research_results.json"
+    if not json_file.exists():
+        console.print(f"[red]❌ Error: research_results.json not found in {result_dir}[/red]")
+        return
+    
+    try:
+        # Load existing results
+        with open(json_file, 'r', encoding='utf-8') as f:
+            results = json.load(f)
+        
+        console.print(f"[cyan]📂 Loading results from: {result_dir}[/cyan]")
+        
+        # Initialize crew and check formats
+        crew = ResearchCrew()
+        available_formats = crew.get_available_export_formats()
+        invalid_formats = [fmt for fmt in export_formats if fmt not in available_formats]
+        
+        if invalid_formats:
+            console.print(f"[yellow]⚠️ Warning: Some export formats are not available: {', '.join(invalid_formats)}[/yellow]")
+            export_formats = [fmt for fmt in export_formats if fmt in available_formats]
+        
+        if not export_formats:
+            console.print("[red]❌ Error: No valid export formats specified[/red]")
+            return
+        
+        console.print(f"[blue]📄 Exporting to formats: {', '.join(export_formats)}[/blue]")
+        
+        # Try to reconstruct draft from markdown file if not in JSON
+        if 'draft' not in results:
+            md_file = result_path / "paper_draft.md"
+            if md_file.exists():
+                with open(md_file, 'r', encoding='utf-8') as f:
+                    md_content = f.read()
+                # Create a basic draft structure
+                results['draft'] = {
+                    'title': results.get('research_topic', 'Research Paper Draft'),
+                    'content': md_content
+                }
+        
+        # Load bibliography
+        bib_file = result_path / "bibliography.txt"
+        if bib_file.exists() and 'bibliography' not in results:
+            with open(bib_file, 'r', encoding='utf-8') as f:
+                results['bibliography'] = f.read()
+        
+        # Load papers list for CSV export
+        papers = []
+        if hasattr(db, 'get_papers_by_topic'):
+            try:
+                papers = db.get_papers_by_topic(results.get('research_topic', ''))
+            except:
+                pass
+        
+        # Export in new formats
+        success_count = 0
+        for format_type in export_formats:
+            try:
+                if 'draft' in results:
+                    draft_path = str(result_path / f"paper_draft_exported")
+                    if export_manager.export_draft(results['draft'], draft_path, format_type):
+                        success_count += 1
+                        console.print(f"   ✅ Draft exported as {format_type.upper()}")
+                
+                if 'bibliography' in results:
+                    bib_path = str(result_path / f"bibliography_exported")
+                    if export_manager.export_bibliography(
+                        results['bibliography'], papers, bib_path, format_type
+                    ):
+                        console.print(f"   ✅ Bibliography exported as {format_type.upper()}")
+                        
+            except Exception as e:
+                console.print(f"   ❌ Failed to export {format_type}: {e}")
+        
+        console.print(f"\n[green]✅ Export completed! Generated {success_count} new format(s)[/green]")
+        console.print(f"[blue]📁 Check directory: {result_dir}[/blue]")
+        
+    except Exception as e:
+        console.print(f"[red]❌ Error during export: {e}[/red]")
+        logger.error(f"Export error: {e}", exc_info=True)
+
+@cli.command()
 def interactive():
     """Start interactive research session"""
     console.print("[bold green]🚀 Interactive Research Session Started[/bold green]")
@@ -596,6 +844,7 @@ def interactive():
 - [green]themes[/green] - List research themes
 - [green]config[/green] - Show configuration
 - [green]test-apis[/green] - Test API connections
+- [green]formats[/green] - Show available export formats
 - [green]clear[/green] - Clear screen
 - [green]exit[/green] - Exit interactive mode
 
@@ -603,7 +852,27 @@ def interactive():
 - research machine learning in healthcare
 - search neural networks
 - themes
+- formats
+
+[bold cyan]Export Features:[/bold cyan]
+Use the CLI commands for advanced export options:
+- [yellow]python main.py research "topic" --export-formats pdf docx[/yellow]
+- [yellow]python main.py export path/to/results --export-formats pdf[/yellow]
 """)
+            
+            elif command.lower() == 'formats':
+                try:
+                    crew = ResearchCrew()
+                    formats = crew.get_supported_export_formats()
+                    available = [fmt for fmt, avail in formats.items() if avail]
+                    unavailable = [fmt for fmt, avail in formats.items() if not avail]
+                    
+                    console.print(f"[green]✅ Available formats: {', '.join(available)}[/green]")
+                    if unavailable:
+                        console.print(f"[red]❌ Unavailable formats: {', '.join(unavailable)}[/red]")
+                        console.print("[yellow]💡 Install dependencies: pip install reportlab python-docx pdfkit[/yellow]")
+                except Exception as e:
+                    console.print(f"[red]Error checking formats: {e}[/red]")
             
             elif command.lower() == 'stats':
                 try:

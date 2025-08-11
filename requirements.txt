@@ -14,3 +14,12 @@ sqlite-utils>=3.35.0
 bibtexparser>=1.4.0
 httpx>=0.25.0
 tenacity>=8.2.0
+
+# Export format dependencies
+reportlab>=4.0.0          # PDF generation
+python-docx>=0.8.11       # Word document generation
+pdfkit>=1.0.0             # HTML to PDF conversion
+jinja2>=3.1.0             # Template engine
+psutil>=5.9.0             # System monitoring
+pdfkit>=1.0.0             # HTML to PDF conversion (requires wkhtmltopdf)
+jinja2>=3.1.0             # Template engine for advanced formatting

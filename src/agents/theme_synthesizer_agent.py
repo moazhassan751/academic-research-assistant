@@ -310,33 +310,84 @@ class ThemeSynthesizerAgent:
     
     def identify_research_gaps(self, themes: List[ResearchTheme], 
                               all_notes: List[ResearchNote]) -> List[str]:
-        """Identify research gaps from synthesized themes"""
+        """Identify research gaps from synthesized themes with topic-specific analysis"""
         if not themes:
             return ["Limited research themes identified - more comprehensive analysis needed"]
         
-        # Simple gap identification based on theme analysis
         gaps = []
+        
+        # Extract research topic from notes
+        research_topic = self._extract_research_topic(all_notes)
         
         # Analyze theme coverage
         theme_titles = [theme.title.lower() for theme in themes]
-        all_content = " ".join([note.content for note in all_notes[:50]])  # Sample content
+        theme_descriptions = [theme.description.lower() for theme in themes]
+        all_content = " ".join([note.content for note in all_notes[:30]])  # Sample content
         
-        # Common research areas that might be missing
-        common_areas = [
-            "longitudinal studies", "clinical trials", "real-world evidence",
-            "cost-effectiveness", "patient outcomes", "implementation challenges",
-            "regulatory considerations", "ethical implications", "scalability",
-            "interoperability", "data quality", "bias mitigation"
-        ]
+        # Topic-specific research areas
+        topic_specific_areas = self._get_topic_specific_areas(research_topic, all_content)
         
-        # Check for missing areas
-        for area in common_areas:
-            if area not in all_content.lower():
-                gaps.append(f"Limited research on {area} in the current literature")
+        # Check for missing areas specific to the research topic
+        for area in topic_specific_areas:
+            if not any(area.lower() in content for content in theme_descriptions + [all_content.lower()]):
+                gaps.append(f"Limited research on {area} in {research_topic} literature")
         
-        # Theme-based gaps
+        # Methodological gaps
+        methodological_terms = ["longitudinal", "experimental", "comparative", "meta-analysis", "systematic review"]
+        found_methods = [term for term in methodological_terms if term in all_content.lower()]
+        if len(found_methods) < 2:
+            gaps.append(f"Limited methodological diversity in {research_topic} studies")
+        
+        # Coverage gaps
         if len(themes) < 3:
-            gaps.append("Limited diversity in research themes - broader investigation needed")
+            gaps.append(f"Limited thematic diversity in {research_topic} research - broader investigation needed")
+        
+        # Temporal gaps
+        if "recent" not in all_content.lower() and "2023" not in all_content and "2024" not in all_content:
+            gaps.append(f"Limited recent research developments in {research_topic}")
+        
+        return gaps[:7]  # Limit to 7 most relevant gaps
+    
+    def _extract_research_topic(self, notes: List[ResearchNote]) -> str:
+        """Extract the main research topic from notes"""
+        if not notes:
+            return "the current research area"
+        
+        # Try to get topic from first note's content or use a generic term
+        first_note = notes[0]
+        if hasattr(first_note, 'research_topic') and first_note.research_topic:
+            return first_note.research_topic
+        
+        # Extract keywords from content
+        content_sample = " ".join([note.content for note in notes[:5]])
+        keywords = self.extract_keywords(content_sample, max_keywords=3)
+        
+        if keywords:
+            return " ".join(keywords)
+        return "the current research area"
+    
+    def _get_topic_specific_areas(self, research_topic: str, content: str) -> List[str]:
+        """Get research areas specific to the topic"""
+        topic_lower = research_topic.lower()
+        
+        # AI/ML topics
+        if any(term in topic_lower for term in ["ai", "artificial intelligence", "machine learning", "neural", "algorithm"]):
+            return ["explainability", "bias detection", "robustness", "generalization", "interpretability", "fairness"]
+        
+        # Astronomy topics  
+        elif any(term in topic_lower for term in ["astronomy", "astrophysics", "cosmic", "stellar", "galaxy"]):
+            return ["observational studies", "simulation models", "multi-wavelength analysis", "data processing techniques", "survey methodologies"]
+        
+        # Medical/Health topics
+        elif any(term in topic_lower for term in ["medical", "health", "clinical", "patient", "disease"]):
+            return ["clinical trials", "patient outcomes", "treatment efficacy", "side effects", "population studies"]
+        
+        # Technology topics
+        elif any(term in topic_lower for term in ["technology", "software", "system", "platform", "digital"]):
+            return ["implementation studies", "user experience", "scalability", "security", "performance evaluation"]
+        
+        # Default areas for any topic
+        return ["empirical validation", "practical applications", "comparative studies", "theoretical frameworks"]
         
         # High confidence themes suggest well-studied areas, low confidence suggests gaps
         low_confidence_themes = [t for t in themes if t.confidence < 0.6]

@@ -39,7 +39,11 @@ class NoteTakingAgent:
     def extract_key_sections(self, text: str, paper_title: str = "") -> Dict[str, str]:
         """Extract key sections from paper text with improved error handling"""
         if not text or len(text.strip()) < self.min_text_length:
-            logger.warning(f"Text too short for section extraction (length: {len(text.strip()) if text else 0})")
+            # Only log warning if text is extremely short (less than 30 chars)
+            if not text or len(text.strip()) < 30:
+                logger.warning(f"Text extremely short for section extraction (length: {len(text.strip()) if text else 0})")
+            else:
+                logger.info(f"Using minimal content extraction for short text (length: {len(text.strip())})")
             return self._create_minimal_sections(text, paper_title)
         
         # Smart text truncation - try to keep complete sentences
@@ -246,7 +250,11 @@ class NoteTakingAgent:
                             paper_title: str = "") -> List[Dict[str, Any]]:
         """Identify key insights relevant to research topic with enhanced error handling"""
         if not text or len(text.strip()) < self.min_text_length:
-            logger.warning(f"Text too short for insight extraction (length: {len(text.strip()) if text else 0})")
+            # Only log warning if text is extremely short (less than 30 chars)
+            if not text or len(text.strip()) < 30:
+                logger.warning(f"Text extremely short for insight extraction (length: {len(text.strip()) if text else 0})")
+            else:
+                logger.info(f"Using fallback insights for short text (length: {len(text.strip())})")
             return self._create_fallback_insights(paper_title, research_topic)
         
         # Smart truncation for insights
