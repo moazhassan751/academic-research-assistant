@@ -33,7 +33,7 @@ class DatabaseManager:
         # Run initial optimization
         try:
             self.optimizer.create_indexes()
-            logger.info("Database indexes initialized successfully")
+            logger.debug("Database indexes initialized successfully")
         except Exception as e:
             logger.warning(f"Failed to initialize database indexes: {e}")
     
@@ -73,6 +73,24 @@ class DatabaseManager:
     def _initialize_tables(self):
         """Initialize database tables with thread safety"""
         try:
+            # Check if database already exists and has proper structure
+            if Path(self.db_path).exists():
+                try:
+                    # Quick check if tables exist
+                    init_db = sqlite_utils.Database(self.db_path)
+                    tables = init_db.table_names()
+                    required_tables = {'papers', 'research_notes', 'research_themes', 'citations'}
+                    
+                    if required_tables.issubset(set(tables)):
+                        # Tables exist, just cache columns and return
+                        self._cache_column_names(init_db)
+                        init_db.close()
+                        logger.debug(f"Database tables already initialized at: {self.db_path}")
+                        return
+                    init_db.close()
+                except Exception:
+                    pass  # If check fails, proceed with full initialization
+            
             # Use a simple connection for initialization - removed connect_kwargs
             init_db = sqlite_utils.Database(self.db_path)
             
@@ -137,7 +155,7 @@ class DatabaseManager:
             # Close the initialization connection
             init_db.close()
             
-            logger.info(f"Database initialized at: {self.db_path}")
+            logger.debug(f"Database initialized at: {self.db_path}")
             
         except Exception as e:
             logger.error(f"Error initializing database: {e}")
@@ -575,10 +593,26 @@ class AsyncDatabaseManager:
     
     def _initialize_tables_sync(self):
         """Initialize database tables synchronously"""
+        # Check if database already exists and has tables
+        if Path(self.db_path).exists():
+            try:
+                with sqlite3.connect(self.db_path) as conn:
+                    cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='papers'")
+                    if cursor.fetchone():
+                        logger.debug("Database tables already exist, skipping async initialization")
+                        return
+            except Exception:
+                pass  # If check fails, proceed with initialization
+        
         # Use the existing DatabaseManager to initialize schema
-        sync_db = DatabaseManager(self.db_path)
-        # Schema is already initialized by DatabaseManager
-        del sync_db
+        try:
+            sync_db = DatabaseManager(self.db_path)
+            # Schema is already initialized by DatabaseManager
+            del sync_db
+            logger.debug("Async database schema initialization completed")
+        except Exception as e:
+            logger.error(f"Failed to initialize async database schema: {e}")
+            raise
     
     @asynccontextmanager
     async def _get_connection(self):
@@ -868,9 +902,9 @@ class AsyncDatabaseManager:
         await self.close_connections()
 
 
-# Create singleton instances
+# Create simple module instances (avoid complex singleton patterns)
 db_manager = DatabaseManager()
 async_db_manager = AsyncDatabaseManager()
 
-# Global database instance
-db = DatabaseManager()
+# Global database instance for backwards compatibility
+db = db_manager
