@@ -1,12 +1,15 @@
 import sqlite3
 import sqlite_utils
+import aiosqlite
+import asyncio
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 import threading
-from contextlib import contextmanager
+from contextlib import contextmanager, asynccontextmanager
 from .models import Paper, ResearchNote, ResearchTheme, Citation
 from ..utils.config import config
 from ..utils.logging import logger
+from ..utils.database_optimizer import DatabaseOptimizer
 
 class DatabaseManager:
     def __init__(self, db_path: Optional[str] = None):
@@ -21,8 +24,18 @@ class DatabaseManager:
         # Keep track of column names for each table - initialize BEFORE _initialize_tables()
         self._column_cache = {}
         
+        # Initialize database optimizer
+        self.optimizer = DatabaseOptimizer(self.db_path)
+        
         # Initialize tables using the main thread connection
         self._initialize_tables()
+        
+        # Run initial optimization
+        try:
+            self.optimizer.create_indexes()
+            logger.info("Database indexes initialized successfully")
+        except Exception as e:
+            logger.warning(f"Failed to initialize database indexes: {e}")
     
     def _get_db(self) -> sqlite_utils.Database:
         """Get thread-local database connection"""
@@ -307,6 +320,10 @@ class DatabaseManager:
             logger.error(f"Error getting all papers: {e}")
             return []
     
+    def get_papers(self) -> List[Paper]:
+        """Alias for get_all_papers() for compatibility"""
+        return self.get_all_papers()
+    
     # Note operations with thread safety
     def save_note(self, note: ResearchNote) -> bool:
         """Save a research note with thread safety"""
@@ -485,12 +502,375 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Error closing connections: {e}")
     
+    def optimize_database(self) -> Dict[str, Any]:
+        """Run database optimization and return statistics"""
+        try:
+            return self.optimizer.maintenance_routine()
+        except Exception as e:
+            logger.error(f"Database optimization failed: {e}")
+            return {'success': False, 'error': str(e)}
+    
+    def get_database_statistics(self) -> Dict[str, Any]:
+        """Get comprehensive database statistics"""
+        try:
+            return self.optimizer.get_database_statistics()
+        except Exception as e:
+            logger.error(f"Failed to get database statistics: {e}")
+            return {'error': str(e)}
+    
+    def analyze_query_performance(self, query: str) -> List[Dict[str, Any]]:
+        """Analyze query performance and get optimization recommendations"""
+        try:
+            return self.optimizer.get_query_plan(query)
+        except Exception as e:
+            logger.error(f"Failed to analyze query: {e}")
+            return []
+    
+    def run_maintenance(self) -> Dict[str, Any]:
+        """Run routine database maintenance"""
+        logger.info("Starting database maintenance routine...")
+        result = self.optimize_database()
+        
+        if result.get('success', False):
+            logger.info("Database maintenance completed successfully")
+            
+            # Log key statistics
+            stats = result.get('statistics', {})
+            logger.info(f"Database size: {stats.get('file_size', 0):,} bytes")
+            logger.info(f"Total papers: {stats.get('table_counts', {}).get('papers', 0)}")
+            logger.info(f"Total notes: {stats.get('table_counts', {}).get('research_notes', 0)}")
+            logger.info(f"Active indexes: {stats.get('index_count', 0)}")
+        else:
+            logger.error(f"Database maintenance failed: {result.get('error', 'Unknown error')}")
+        
+        return result
+    
     def __del__(self):
         """Cleanup when object is destroyed"""
         try:
             self.close_connections()
         except:
             pass
+
+
+class AsyncDatabaseManager:
+    """Async database manager for improved performance"""
+    
+    def __init__(self, db_path: Optional[str] = None):
+        self.db_path = db_path or config.get('storage.database_path', 'data/research.db')
+        
+        # Create data directory if it doesn't exist
+        Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
+        
+        # Initialize optimizer
+        self.optimizer = DatabaseOptimizer(self.db_path)
+        
+        # Connection pool (simple implementation)
+        self._connection_pool = []
+        self._pool_size = 5
+        self._pool_lock = asyncio.Lock()
+        
+        # Initialize database schema synchronously first
+        self._initialize_tables_sync()
+    
+    def _initialize_tables_sync(self):
+        """Initialize database tables synchronously"""
+        # Use the existing DatabaseManager to initialize schema
+        sync_db = DatabaseManager(self.db_path)
+        # Schema is already initialized by DatabaseManager
+        del sync_db
+    
+    @asynccontextmanager
+    async def _get_connection(self):
+        """Get connection from pool or create new one"""
+        async with self._pool_lock:
+            if self._connection_pool:
+                conn = self._connection_pool.pop()
+            else:
+                conn = await aiosqlite.connect(
+                    self.db_path,
+                    timeout=30.0
+                )
+                conn.row_factory = aiosqlite.Row
+        
+        try:
+            yield conn
+        finally:
+            async with self._pool_lock:
+                if len(self._connection_pool) < self._pool_size:
+                    self._connection_pool.append(conn)
+                else:
+                    await conn.close()
+    
+    async def save_papers_async(self, papers: List[Paper]) -> List[str]:
+        """Save multiple papers asynchronously"""
+        saved_ids = []
+        
+        async with self._get_connection() as conn:
+            # Begin transaction
+            await conn.execute("BEGIN")
+            
+            try:
+                for paper in papers:
+                    # Check if paper exists
+                    async with conn.execute(
+                        "SELECT id FROM papers WHERE id = ?", (paper.id,)
+                    ) as cursor:
+                        exists = await cursor.fetchone()
+                    
+                    if not exists:
+                        await conn.execute("""
+                            INSERT INTO papers (
+                                id, title, authors, abstract, url, published_date,
+                                venue, citations, pdf_path, full_text, keywords,
+                                doi, arxiv_id, created_at
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """, (
+                            paper.id, paper.title, paper.authors, paper.abstract,
+                            paper.url, paper.published_date, paper.venue, paper.citations,
+                            paper.pdf_path, paper.full_text, paper.keywords,
+                            paper.doi, paper.arxiv_id, paper.created_at
+                        ))
+                        saved_ids.append(paper.id)
+                        logger.debug(f"Saved paper: {paper.title}")
+                
+                await conn.commit()
+                
+            except Exception as e:
+                await conn.rollback()
+                logger.error(f"Failed to save papers: {e}")
+                raise
+        
+        logger.info(f"Saved {len(saved_ids)} papers asynchronously")
+        return saved_ids
+    
+    async def save_notes_async(self, notes: List[ResearchNote]) -> List[str]:
+        """Save multiple research notes asynchronously"""
+        saved_ids = []
+        
+        async with self._get_connection() as conn:
+            await conn.execute("BEGIN")
+            
+            try:
+                for note in notes:
+                    async with conn.execute(
+                        "SELECT id FROM research_notes WHERE id = ?", (note.id,)
+                    ) as cursor:
+                        exists = await cursor.fetchone()
+                    
+                    if not exists:
+                        await conn.execute("""
+                            INSERT INTO research_notes (
+                                id, paper_id, content, note_type, confidence,
+                                page_number, created_at
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                        """, (
+                            note.id, note.paper_id, note.content, note.note_type,
+                            note.confidence, note.page_number, note.created_at
+                        ))
+                        saved_ids.append(note.id)
+                
+                await conn.commit()
+                
+            except Exception as e:
+                await conn.rollback()
+                logger.error(f"Failed to save notes: {e}")
+                raise
+        
+        logger.info(f"Saved {len(saved_ids)} notes asynchronously")
+        return saved_ids
+    
+    async def get_papers_async(
+        self, 
+        limit: Optional[int] = None,
+        search_query: Optional[str] = None
+    ) -> List[Paper]:
+        """Get papers asynchronously with optional search"""
+        papers = []
+        
+        async with self._get_connection() as conn:
+            if search_query:
+                query = """
+                    SELECT * FROM papers 
+                    WHERE title LIKE ? OR abstract LIKE ? OR authors LIKE ?
+                    ORDER BY citations DESC, published_date DESC
+                """
+                params = [f"%{search_query}%"] * 3
+                
+                if limit:
+                    query += " LIMIT ?"
+                    params.append(limit)
+                
+                async with conn.execute(query, params) as cursor:
+                    rows = await cursor.fetchall()
+            else:
+                query = "SELECT * FROM papers ORDER BY citations DESC, published_date DESC"
+                params = []
+                
+                if limit:
+                    query += " LIMIT ?"
+                    params.append(limit)
+                
+                async with conn.execute(query, params) as cursor:
+                    rows = await cursor.fetchall()
+            
+            for row in rows:
+                papers.append(Paper(
+                    id=row['id'],
+                    title=row['title'],
+                    authors=row['authors'],
+                    abstract=row['abstract'],
+                    url=row['url'],
+                    published_date=row['published_date'],
+                    venue=row['venue'],
+                    citations=row['citations'] or 0,
+                    pdf_path=row['pdf_path'],
+                    full_text=row['full_text'],
+                    keywords=row['keywords'],
+                    doi=row['doi'],
+                    arxiv_id=row['arxiv_id'],
+                    created_at=row['created_at']
+                ))
+        
+        return papers
+    
+    async def get_notes_by_paper_async(self, paper_id: str) -> List[ResearchNote]:
+        """Get notes for a specific paper asynchronously"""
+        notes = []
+        
+        async with self._get_connection() as conn:
+            async with conn.execute(
+                "SELECT * FROM research_notes WHERE paper_id = ? ORDER BY created_at",
+                (paper_id,)
+            ) as cursor:
+                rows = await cursor.fetchall()
+                
+                for row in rows:
+                    notes.append(ResearchNote(
+                        id=row['id'],
+                        paper_id=row['paper_id'],
+                        content=row['content'],
+                        note_type=row['note_type'],
+                        confidence=row['confidence'] or 0.0,
+                        page_number=row['page_number'],
+                        created_at=row['created_at']
+                    ))
+        
+        return notes
+    
+    async def get_database_stats_async(self) -> Dict[str, Any]:
+        """Get database statistics asynchronously"""
+        stats = {}
+        
+        async with self._get_connection() as conn:
+            # Get table counts
+            for table in ['papers', 'research_notes', 'research_themes', 'citations']:
+                async with conn.execute(f"SELECT COUNT(*) FROM {table}") as cursor:
+                    result = await cursor.fetchone()
+                    stats[f'{table}_count'] = result[0] if result else 0
+            
+            # Get recent activity
+            async with conn.execute(
+                "SELECT COUNT(*) FROM papers WHERE created_at > datetime('now', '-7 days')"
+            ) as cursor:
+                result = await cursor.fetchone()
+                stats['papers_last_week'] = result[0] if result else 0
+            
+            # Get top venues
+            async with conn.execute("""
+                SELECT venue, COUNT(*) as count 
+                FROM papers 
+                WHERE venue IS NOT NULL 
+                GROUP BY venue 
+                ORDER BY count DESC 
+                LIMIT 5
+            """) as cursor:
+                venues = await cursor.fetchall()
+                stats['top_venues'] = [{'venue': row[0], 'count': row[1]} for row in venues]
+        
+        return stats
+    
+    async def search_papers_fulltext_async(
+        self, 
+        query: str, 
+        limit: int = 50
+    ) -> List[Paper]:
+        """Full-text search across papers asynchronously"""
+        papers = []
+        
+        # Use MATCH for FTS if available, otherwise LIKE
+        search_query = """
+            SELECT *, 
+                   (CASE 
+                    WHEN title LIKE ? THEN 10
+                    WHEN abstract LIKE ? THEN 5
+                    WHEN authors LIKE ? THEN 3
+                    ELSE 1 END) as relevance_score
+            FROM papers 
+            WHERE title LIKE ? OR abstract LIKE ? OR authors LIKE ? OR full_text LIKE ?
+            ORDER BY relevance_score DESC, citations DESC
+            LIMIT ?
+        """
+        
+        search_term = f"%{query}%"
+        params = [search_term] * 7 + [limit]
+        
+        async with self._get_connection() as conn:
+            async with conn.execute(search_query, params) as cursor:
+                rows = await cursor.fetchall()
+                
+                for row in rows:
+                    papers.append(Paper(
+                        id=row['id'],
+                        title=row['title'],
+                        authors=row['authors'],
+                        abstract=row['abstract'],
+                        url=row['url'],
+                        published_date=row['published_date'],
+                        venue=row['venue'],
+                        citations=row['citations'] or 0,
+                        pdf_path=row['pdf_path'],
+                        full_text=row['full_text'],
+                        keywords=row['keywords'],
+                        doi=row['doi'],
+                        arxiv_id=row['arxiv_id'],
+                        created_at=row['created_at']
+                    ))
+        
+        return papers
+    
+    async def optimize_database_async(self) -> Dict[str, Any]:
+        """Run database optimization asynchronously"""
+        # Run optimization in background to avoid blocking
+        loop = asyncio.get_event_loop()
+        
+        # Run optimizer in thread pool to avoid blocking
+        result = await loop.run_in_executor(
+            None, 
+            self.optimizer.maintenance_routine
+        )
+        
+        return result
+    
+    async def close_connections(self):
+        """Close all connections in pool"""
+        async with self._pool_lock:
+            for conn in self._connection_pool:
+                await conn.close()
+            self._connection_pool.clear()
+    
+    async def __aenter__(self):
+        """Async context manager entry"""
+        return self
+    
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Async context manager exit"""
+        await self.close_connections()
+
+
+# Create singleton instances
+db_manager = DatabaseManager()
+async_db_manager = AsyncDatabaseManager()
 
 # Global database instance
 db = DatabaseManager()
