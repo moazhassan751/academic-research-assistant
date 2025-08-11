@@ -9,6 +9,7 @@ from ..agents.note_taking_agent import NoteTakingAgent
 from ..agents.theme_synthesizer_agent import ThemeSynthesizerAgent
 from ..agents.draft_writer_agent import DraftWriterAgent
 from ..agents.citation_generator_agent import CitationGeneratorAgent
+from ..agents.qa_agent import QuestionAnsweringAgent
 from ..storage.database import db
 from ..utils.logging import logger
 from ..utils.config import config
@@ -24,6 +25,7 @@ class ResearchCrew:
             self.theme_agent = ThemeSynthesizerAgent()
             self.draft_agent = DraftWriterAgent()
             self.citation_agent = CitationGeneratorAgent()
+            self.qa_agent = QuestionAnsweringAgent()
             
             # Configuration for resilience
             self.max_workflow_retries = config.get('research.max_retries', 3)
@@ -32,7 +34,7 @@ class ResearchCrew:
             self.parallel_processing = config.get('research.parallel_processing', True)
             self.checkpoint_enabled = config.get('research.checkpoint_enabled', True)
             
-            logger.info("Research crew initialized with all agents")
+            logger.info("Research crew initialized with all agents including QA agent")
             
         except Exception as e:
             logger.error(f"Failed to initialize research crew: {e}")
@@ -912,3 +914,143 @@ class ResearchCrew:
                 validation_report['warnings'].append(f"Could not validate execution time: {e}")
         
         return validation_report
+    
+    def answer_research_question(self, question: str, research_topic: str = None, 
+                                paper_limit: int = 10) -> Dict[str, Any]:
+        """
+        Answer a research question based on papers in the database
+        
+        Args:
+            question: The research question to answer
+            research_topic: Optional topic to filter papers (if None, searches all papers)
+            paper_limit: Maximum number of papers to consider for the answer
+            
+        Returns:
+            Dictionary containing the answer, sources, confidence score, and metadata
+        """
+        try:
+            logger.info(f"Processing research question: {question}")
+            
+            start_time = time.time()
+            
+            # Use the QA agent to answer the question
+            answer_result = self.qa_agent.answer_question(
+                question=question,
+                research_topic=research_topic,
+                paper_limit=paper_limit
+            )
+            
+            # Generate follow-up questions
+            follow_up_questions = self.qa_agent.get_follow_up_questions(question, answer_result)
+            answer_result['follow_up_questions'] = follow_up_questions
+            
+            # Add timing and metadata
+            execution_time = time.time() - start_time
+            answer_result.update({
+                'execution_time': f"{execution_time:.2f} seconds",
+                'question': question,
+                'research_topic_filter': research_topic,
+                'paper_limit': paper_limit
+            })
+            
+            logger.info(f"Question answered successfully in {execution_time:.2f} seconds")
+            logger.info(f"Used {answer_result.get('paper_count', 0)} papers with confidence {answer_result.get('confidence', 0):.3f}")
+            
+            return answer_result
+            
+        except Exception as e:
+            logger.error(f"Error answering research question: {e}")
+            return {
+                'answer': f"An error occurred while processing your question: {str(e)}",
+                'sources': [],
+                'confidence': 0.0,
+                'paper_count': 0,
+                'follow_up_questions': [],
+                'error': str(e)
+            }
+    
+    def interactive_qa_session(self, initial_topic: str = None) -> Dict[str, Any]:
+        """
+        Start an interactive QA session that allows multiple related questions
+        
+        Args:
+            initial_topic: Optional initial topic to focus the session on
+            
+        Returns:
+            Dictionary containing the session history and results
+        """
+        try:
+            session_results = {
+                'session_start': datetime.now().isoformat(),
+                'initial_topic': initial_topic,
+                'qa_history': [],
+                'total_questions': 0
+            }
+            
+            logger.info(f"Starting interactive QA session with topic: {initial_topic}")
+            
+            while True:
+                try:
+                    # Get question from user (in a real CLI implementation)
+                    # For now, this is a framework for the functionality
+                    question = input("\nEnter your research question (or 'quit' to exit): ").strip()
+                    
+                    if question.lower() in ['quit', 'exit', 'q']:
+                        break
+                    
+                    if not question:
+                        print("Please enter a valid question.")
+                        continue
+                    
+                    # Answer the question
+                    answer_result = self.answer_research_question(
+                        question=question,
+                        research_topic=initial_topic,
+                        paper_limit=15  # Slightly higher limit for interactive sessions
+                    )
+                    
+                    # Add to session history
+                    qa_entry = {
+                        'question': question,
+                        'answer_result': answer_result,
+                        'timestamp': datetime.now().isoformat()
+                    }
+                    session_results['qa_history'].append(qa_entry)
+                    session_results['total_questions'] += 1
+                    
+                    # Display results (in a real implementation, this would be formatted nicely)
+                    print(f"\n🔍 Answer (Confidence: {answer_result.get('confidence', 0):.2f}):")
+                    print(answer_result.get('answer', 'No answer available'))
+                    
+                    if answer_result.get('follow_up_questions'):
+                        print(f"\n💡 Follow-up questions you might ask:")
+                        for i, fq in enumerate(answer_result['follow_up_questions'], 1):
+                            print(f"   {i}. {fq}")
+                    
+                except KeyboardInterrupt:
+                    print("\nSession interrupted by user.")
+                    break
+                except Exception as e:
+                    print(f"Error processing question: {e}")
+                    continue
+            
+            session_results['session_end'] = datetime.now().isoformat()
+            logger.info(f"QA session completed with {session_results['total_questions']} questions")
+            
+            return session_results
+            
+        except Exception as e:
+            logger.error(f"Error in interactive QA session: {e}")
+            return {
+                'error': str(e),
+                'session_start': datetime.now().isoformat(),
+                'qa_history': [],
+                'total_questions': 0
+            }
+
+    def answer_question(self, question: str, research_topic: str = None, 
+                       paper_limit: int = 10) -> Dict[str, Any]:
+        """
+        Alias for answer_research_question for convenience
+        """
+        return self.answer_research_question(question, research_topic, paper_limit)

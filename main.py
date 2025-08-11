@@ -8,6 +8,7 @@ from rich.text import Text
 from datetime import datetime, timedelta
 from pathlib import Path
 import sys
+import time
 
 try:
     from src.crew.research_crew import ResearchCrew
@@ -839,6 +840,7 @@ def interactive():
                 console.print("""
 [bold cyan]Available Commands:[/bold cyan]
 - [green]research <topic>[/green] - Start research on a topic
+- [green]ask <question>[/green] - Ask a question about papers in database
 - [green]stats[/green] - Show database statistics  
 - [green]search <query>[/green] - Search papers in database
 - [green]themes[/green] - List research themes
@@ -850,14 +852,19 @@ def interactive():
 
 [bold cyan]Examples:[/bold cyan]
 - research machine learning in healthcare
+- ask What are the recent trends in transformer architectures?
 - search neural networks
 - themes
-- formats
 
-[bold cyan]Export Features:[/bold cyan]
-Use the CLI commands for advanced export options:
+[bold cyan]Q&A Features:[/bold cyan]
+- Ask questions about papers you've collected
+- Get AI-powered answers with source citations
+- Interactive sessions for multiple related questions
+
+[bold cyan]CLI Commands for Advanced Features:[/bold cyan]
+- [yellow]python main.py ask "your question" --topic "filter topic"[/yellow]
+- [yellow]python main.py qa-session --topic "focus topic"[/yellow]
 - [yellow]python main.py research "topic" --export-formats pdf docx[/yellow]
-- [yellow]python main.py export path/to/results --export-formats pdf[/yellow]
 """)
             
             elif command.lower() == 'formats':
@@ -938,6 +945,43 @@ Use the CLI commands for advanced export options:
                     console.print(f"[red]Error: {e}[/red]")
                     logger.error(f"Themes error: {e}", exc_info=True)
             
+            elif command.lower().startswith('ask '):
+                question = command[4:].strip()
+                if question and len(question) >= 10:
+                    if not crew:
+                        console.print("[cyan]🤖 Initializing QA system...[/cyan]")
+                        crew = ResearchCrew()
+                    
+                    try:
+                        console.print(f"[cyan]🔍 Analyzing papers for: {question}[/cyan]")
+                        result = crew.answer_research_question(question, paper_limit=10)
+                        
+                        answer = result.get('answer', 'No answer available')
+                        confidence = result.get('confidence', 0.0)
+                        paper_count = result.get('paper_count', 0)
+                        
+                        # Display result
+                        if confidence >= 0.5:
+                            console.print(f"[green]🎯 Answer (Confidence: {confidence:.2f}, Papers: {paper_count}):[/green]")
+                        else:
+                            console.print(f"[yellow]🤔 Answer (Confidence: {confidence:.2f}, Papers: {paper_count}):[/yellow]")
+                        
+                        console.print(Panel(answer, border_style="green" if confidence >= 0.5 else "yellow"))
+                        
+                        # Show follow-ups
+                        follow_ups = result.get('follow_up_questions', [])
+                        if follow_ups:
+                            console.print(f"[blue]💡 Follow-up questions:[/blue]")
+                            for fq in follow_ups[:3]:
+                                console.print(f"   - {fq}")
+                                
+                    except Exception as e:
+                        console.print(f"[red]QA error: {e}[/red]")
+                        logger.error(f"QA error: {e}", exc_info=True)
+                else:
+                    console.print("[red]Please provide a detailed question (at least 10 characters)[/red]")
+                    console.print("[blue]Example: ask What are the recent trends in neural networks?[/blue]")
+            
             else:
                 console.print(f"[red]Unknown command: {command}[/red]")
                 console.print("Type 'help' for available commands.")
@@ -947,6 +991,321 @@ Use the CLI commands for advanced export options:
         except Exception as e:
             console.print(f"[red]Error: {e}[/red]")
             logger.error(f"Interactive session error: {e}", exc_info=True)
+
+@cli.command()
+@click.argument('question')
+@click.option('--topic', '-t', help='Filter papers by research topic')
+@click.option('--limit', '-l', default=10, help='Maximum number of papers to consider')
+@click.option('--save-result', '-s', is_flag=True, help='Save the QA result to file')
+def ask(question, topic, limit, save_result):
+    """Ask a research question and get an answer based on papers in the database"""
+    
+    if not question.strip():
+        console.print("[red]❌ Error: Question cannot be empty[/red]")
+        return
+    
+    if len(question) < 10:
+        console.print("[red]❌ Error: Question too short (minimum 10 characters)[/red]")
+        return
+    
+    try:
+        console.print(Panel(
+            f"[bold]Question:[/bold] {question}\n"
+            f"[bold]Topic Filter:[/bold] {topic or 'None (search all papers)'}\n"
+            f"[bold]Paper Limit:[/bold] {limit}\n"
+            f"[bold]Save Result:[/bold] {'Yes' if save_result else 'No'}",
+            title="Question Answering Parameters",
+            border_style="blue"
+        ))
+        
+        # Initialize research crew
+        console.print("[cyan]🤖 Initializing QA system...[/cyan]")
+        crew = ResearchCrew()
+        
+        # Answer the question with progress indication
+        with console.status("🔍 Analyzing papers and generating answer..."):
+            result = crew.answer_research_question(
+                question=question,
+                research_topic=topic,
+                paper_limit=limit
+            )
+        
+        # Display the result
+        if result.get('error'):
+            console.print(f"[red]❌ Error: {result['error']}[/red]")
+            return
+        
+        # Answer panel
+        answer_text = result.get('answer', 'No answer available')
+        confidence = result.get('confidence', 0.0)
+        paper_count = result.get('paper_count', 0)
+        
+        # Color based on confidence
+        if confidence >= 0.7:
+            confidence_color = "green"
+        elif confidence >= 0.4:
+            confidence_color = "yellow"
+        else:
+            confidence_color = "red"
+        
+        console.print(Panel(
+            answer_text,
+            title=f"🎯 Answer (Confidence: [{confidence_color}]{confidence:.2f}[/{confidence_color}], Papers: {paper_count})",
+            border_style="green" if confidence >= 0.5 else "yellow"
+        ))
+        
+        # Show sources
+        sources = result.get('sources', [])
+        if sources:
+            console.print("\n[bold cyan]📚 Sources Used:[/bold cyan]")
+            sources_table = Table(show_header=True, header_style="bold blue")
+            sources_table.add_column("Title", max_width=40)
+            sources_table.add_column("Authors", max_width=25)
+            sources_table.add_column("Year")
+            sources_table.add_column("Relevance", justify="right")
+            sources_table.add_column("Citations", justify="right")
+            
+            for i, source in enumerate(sources[:10], 1):  # Show top 10 sources
+                title = source.get('title', 'Unknown')
+                authors = source.get('authors', 'Unknown')
+                year = str(source.get('year', 'N/A'))
+                relevance = f"{source.get('relevance_score', 0):.2f}"
+                citations = str(source.get('citations', 0))
+                
+                # Truncate long titles and authors
+                if len(title) > 37:
+                    title = title[:34] + "..."
+                if len(authors) > 22:
+                    authors = authors[:19] + "..."
+                
+                sources_table.add_row(title, authors, year, relevance, citations)
+            
+            console.print(sources_table)
+        
+        # Show follow-up questions
+        follow_ups = result.get('follow_up_questions', [])
+        if follow_ups:
+            console.print("\n[bold cyan]💡 Follow-up Questions You Might Ask:[/bold cyan]")
+            for i, fq in enumerate(follow_ups, 1):
+                console.print(f"   {i}. {fq}")
+        
+        # Performance info
+        execution_time = result.get('execution_time', 'Unknown')
+        console.print(f"\n[dim]⏱️ Answered in {execution_time}[/dim]")
+        
+        # Save result if requested
+        if save_result:
+            try:
+                from pathlib import Path
+                import json
+                
+                # Create QA results directory
+                qa_dir = Path("data/qa_results")
+                qa_dir.mkdir(parents=True, exist_ok=True)
+                
+                # Generate filename
+                import re
+                safe_question = re.sub(r'[^\w\s-]', '', question)[:50]
+                safe_question = re.sub(r'[-\s]+', '_', safe_question)
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                filename = f"qa_{safe_question}_{timestamp}.json"
+                
+                file_path = qa_dir / filename
+                
+                # Save result
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    json.dump(result, f, indent=2, default=str)
+                
+                console.print(f"[green]💾 QA result saved to: {file_path}[/green]")
+                
+            except Exception as e:
+                console.print(f"[yellow]⚠️ Failed to save result: {e}[/yellow]")
+        
+        # Suggestions for better results
+        if confidence < 0.5 and paper_count < 5:
+            console.print("\n[yellow]💡 Tips for better answers:[/yellow]")
+            console.print("   - Try searching for more papers on this topic first")
+            console.print("   - Use more specific technical terms in your question")
+            console.print("   - Run: python main.py research '<related topic>' to gather more papers")
+    
+    except Exception as e:
+        console.print(f"[red]❌ Error answering question: {e}[/red]")
+        logger.error(f"QA error: {e}", exc_info=True)
+
+@cli.command()
+@click.option('--topic', '-t', help='Initial topic to focus the session on')
+@click.option('--save-session', '-s', is_flag=True, help='Save the entire QA session')
+def qa_session(topic, save_session):
+    """Start an interactive question-answering session"""
+    
+    try:
+        console.print(Panel(
+            f"[bold]🤖 Interactive Q&A Session[/bold]\n\n"
+            f"[blue]Initial Topic:[/blue] {topic or 'None (general session)'}\n"
+            f"[blue]Save Session:[/blue] {'Yes' if save_session else 'No'}\n\n"
+            f"[dim]Type your research questions and get answers based on papers in your database.\n"
+            f"Commands: 'quit', 'exit', or 'q' to end session[/dim]",
+            title="Welcome to Q&A Session",
+            border_style="green"
+        ))
+        
+        # Initialize research crew
+        console.print("[cyan]🚀 Initializing QA system...[/cyan]")
+        crew = ResearchCrew()
+        
+        # Check if we have papers in the database
+        stats = db.get_stats()
+        paper_count = stats.get('papers', 0)
+        
+        if paper_count == 0:
+            console.print("[yellow]⚠️ No papers found in database![/yellow]")
+            console.print("[blue]💡 Run some research commands first to populate the database:[/blue]")
+            console.print("   python main.py research 'your topic here'")
+            if not Confirm.ask("Continue anyway?"):
+                return
+        else:
+            console.print(f"[green]📚 Found {paper_count} papers in database[/green]")
+        
+        # Start interactive session
+        session_data = {
+            'session_start': datetime.now().isoformat(),
+            'initial_topic': topic,
+            'questions': [],
+            'total_questions': 0
+        }
+        
+        question_number = 1
+        
+        while True:
+            try:
+                # Get question from user
+                console.print(f"\n[bold cyan]Question #{question_number}:[/bold cyan]")
+                question = Prompt.ask("🔍 What would you like to know").strip()
+                
+                # Check for exit commands
+                if question.lower() in ['quit', 'exit', 'q', 'stop']:
+                    console.print("[yellow]👋 Ending Q&A session...[/yellow]")
+                    break
+                
+                if not question or len(question) < 5:
+                    console.print("[yellow]⚠️ Please enter a more detailed question (at least 5 characters)[/yellow]")
+                    continue
+                
+                # Answer the question
+                console.print(f"[cyan]🤖 Thinking...[/cyan]")
+                
+                start_time = time.time()
+                result = crew.answer_research_question(
+                    question=question,
+                    research_topic=topic,
+                    paper_limit=12  # Good balance for interactive use
+                )
+                answer_time = time.time() - start_time
+                
+                # Display the answer
+                answer = result.get('answer', 'No answer available')
+                confidence = result.get('confidence', 0.0)
+                paper_count_used = result.get('paper_count', 0)
+                
+                # Format answer display
+                if confidence >= 0.7:
+                    border_color = "green"
+                    confidence_emoji = "🎯"
+                elif confidence >= 0.4:
+                    border_color = "yellow"
+                    confidence_emoji = "🤔"
+                else:
+                    border_color = "red" 
+                    confidence_emoji = "❓"
+                
+                console.print(Panel(
+                    answer,
+                    title=f"{confidence_emoji} Answer (Confidence: {confidence:.2f}, Papers: {paper_count_used}, Time: {answer_time:.1f}s)",
+                    border_style=border_color
+                ))
+                
+                # Show key sources
+                sources = result.get('sources', [])
+                if sources and len(sources) > 0:
+                    console.print(f"\n[dim]📖 Key sources: {', '.join([s.get('title', 'Unknown')[:30] + ('...' if len(s.get('title', '')) > 30 else '') for s in sources[:3]])}[/dim]")
+                
+                # Show follow-up questions
+                follow_ups = result.get('follow_up_questions', [])
+                if follow_ups:
+                    console.print(f"\n[blue]💡 Follow-up suggestions:[/blue]")
+                    for i, fq in enumerate(follow_ups[:3], 1):  # Show top 3
+                        console.print(f"   {i}. {fq}")
+                
+                # Save to session data
+                session_entry = {
+                    'question_number': question_number,
+                    'question': question,
+                    'answer': answer,
+                    'confidence': confidence,
+                    'paper_count': paper_count_used,
+                    'execution_time': answer_time,
+                    'timestamp': datetime.now().isoformat(),
+                    'sources_count': len(sources)
+                }
+                session_data['questions'].append(session_entry)
+                session_data['total_questions'] += 1
+                
+                question_number += 1
+                
+                # Show session stats every 5 questions
+                if question_number % 5 == 1 and question_number > 1:
+                    console.print(f"\n[dim]📊 Session stats: {question_number-1} questions asked, avg confidence: {sum(q['confidence'] for q in session_data['questions']) / len(session_data['questions']):.2f}[/dim]")
+                
+            except KeyboardInterrupt:
+                console.print("\n[yellow]⏹️ Session interrupted. Type 'quit' to exit gracefully.[/yellow]")
+                continue
+            except Exception as e:
+                console.print(f"[red]❌ Error processing question: {e}[/red]")
+                logger.error(f"QA session error: {e}", exc_info=True)
+                continue
+        
+        # Session summary
+        session_data['session_end'] = datetime.now().isoformat()
+        total_questions = session_data['total_questions']
+        
+        if total_questions > 0:
+            avg_confidence = sum(q['confidence'] for q in session_data['questions']) / total_questions
+            
+            console.print(Panel(
+                f"[bold]Session Summary[/bold]\n\n"
+                f"Questions Asked: {total_questions}\n"
+                f"Average Confidence: {avg_confidence:.2f}\n"
+                f"Session Duration: {(datetime.fromisoformat(session_data['session_end']) - datetime.fromisoformat(session_data['session_start'])).total_seconds() / 60:.1f} minutes",
+                title="📊 Q&A Session Complete",
+                border_style="blue"
+            ))
+            
+            # Save session if requested
+            if save_session:
+                try:
+                    from pathlib import Path
+                    import json
+                    
+                    qa_dir = Path("data/qa_sessions")
+                    qa_dir.mkdir(parents=True, exist_ok=True)
+                    
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    filename = f"qa_session_{timestamp}.json"
+                    file_path = qa_dir / filename
+                    
+                    with open(file_path, 'w', encoding='utf-8') as f:
+                        json.dump(session_data, f, indent=2, default=str)
+                    
+                    console.print(f"[green]💾 Session saved to: {file_path}[/green]")
+                    
+                except Exception as e:
+                    console.print(f"[yellow]⚠️ Failed to save session: {e}[/yellow]")
+        else:
+            console.print("[blue]No questions were asked in this session.[/blue]")
+    
+    except Exception as e:
+        console.print(f"[red]❌ Error in QA session: {e}[/red]")
+        logger.error(f"QA session error: {e}", exc_info=True)
 
 if __name__ == '__main__':
     cli()
