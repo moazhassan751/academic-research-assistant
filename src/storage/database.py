@@ -604,11 +604,64 @@ class AsyncDatabaseManager:
             except Exception:
                 pass  # If check fails, proceed with initialization
         
-        # Use the existing DatabaseManager to initialize schema
+        # Initialize tables directly without creating another DatabaseManager
         try:
-            sync_db = DatabaseManager(self.db_path)
-            # Schema is already initialized by DatabaseManager
-            del sync_db
+            with sqlite3.connect(self.db_path) as conn:
+                conn.executescript("""
+                    CREATE TABLE IF NOT EXISTS papers (
+                        id TEXT PRIMARY KEY,
+                        title TEXT NOT NULL,
+                        authors TEXT,
+                        abstract TEXT,
+                        url TEXT,
+                        published_date TEXT,
+                        venue TEXT,
+                        citations INTEGER DEFAULT 0,
+                        pdf_path TEXT,
+                        full_text TEXT,
+                        keywords TEXT,
+                        doi TEXT,
+                        arxiv_id TEXT,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    );
+                    
+                    CREATE TABLE IF NOT EXISTS research_notes (
+                        id TEXT PRIMARY KEY,
+                        paper_id TEXT,
+                        content TEXT NOT NULL,
+                        note_type TEXT,
+                        confidence REAL DEFAULT 0.0,
+                        page_number INTEGER,
+                        created_at TEXT,
+                        FOREIGN KEY (paper_id) REFERENCES papers (id)
+                    );
+                    
+                    CREATE TABLE IF NOT EXISTS research_themes (
+                        id TEXT PRIMARY KEY,
+                        title TEXT NOT NULL,
+                        description TEXT,
+                        papers TEXT,
+                        frequency INTEGER DEFAULT 0,
+                        confidence REAL DEFAULT 0.0,
+                        related_themes TEXT,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    );
+                    
+                    CREATE TABLE IF NOT EXISTS citations (
+                        id TEXT PRIMARY KEY,
+                        paper_id TEXT,
+                        citation_key TEXT,
+                        apa_format TEXT,
+                        mla_format TEXT,
+                        bibtex TEXT,
+                        FOREIGN KEY (paper_id) REFERENCES papers (id)
+                    );
+                    
+                    CREATE INDEX IF NOT EXISTS idx_papers_title ON papers(title);
+                    CREATE INDEX IF NOT EXISTS idx_notes_paper_id ON research_notes(paper_id);
+                    CREATE INDEX IF NOT EXISTS idx_themes_frequency ON research_themes(frequency);
+                """)
+                conn.commit()
             logger.debug("Async database schema initialization completed")
         except Exception as e:
             logger.error(f"Failed to initialize async database schema: {e}")
@@ -902,9 +955,26 @@ class AsyncDatabaseManager:
         await self.close_connections()
 
 
-# Create simple module instances (avoid complex singleton patterns)
-db_manager = DatabaseManager()
-async_db_manager = AsyncDatabaseManager()
+# Create simple module instances only when needed
+# Avoid immediate instantiation to prevent circular imports
+_db_manager = None
+_async_db_manager = None
 
-# Global database instance for backwards compatibility
-db = db_manager
+def get_db_manager():
+    """Get or create the database manager instance"""
+    global _db_manager
+    if _db_manager is None:
+        _db_manager = DatabaseManager()
+    return _db_manager
+
+def get_async_db_manager():
+    """Get or create the async database manager instance"""
+    global _async_db_manager
+    if _async_db_manager is None:
+        _async_db_manager = AsyncDatabaseManager()
+    return _async_db_manager
+
+# Legacy global instances - use functions above instead
+db_manager = get_db_manager()
+async_db_manager = get_async_db_manager()
+db = get_db_manager()
