@@ -1,0 +1,76 @@
+# Academic Research Assistant Configuration
+# Minimal configuration matching expected schema
+
+# API Configuration
+apis:
+  openalex:
+    base_url: "https://api.openalex.org"
+    rate_limit: 10
+    timeout: 30
+    
+  crossref:
+    base_url: "https://api.crossref.org/works"
+    rate_limit: 50
+    timeout: 30
+
+# LLM Configuration  
+llm:
+  provider: "gemini"
+  model: "gemini-1.5-flash-002"
+  temperature: 0.1
+  max_tokens: 8192
+  api_key: ""
+
+# Database Configuration
+database:
+  path: "data/research.db"
+  backup_enabled: true
+  backup_interval: 3600
+  max_connections: 10
+  connection_timeout: 30
+  optimize_on_startup: true
+  
+# Logging Configuration
+logging:
+  level: "INFO"
+  file_enabled: true
+  file_path: "logs/research_assistant.log"
+  console_enabled: true
+  structured_logging: true
+  max_file_size: 10485760
+  backup_count: 5
+
+# Research Configuration
+research:
+  max_papers_per_search: 50
+  default_search_providers: ["openalex", "crossref", "semantic_scholar"]
+  concurrent_requests: 2
+  search_timeout: 120
+  note_confidence_threshold: 0.5
+  theme_frequency_threshold: 3
+
+# Export Configuration
+export:
+  output_directory: "data/outputs"
+  default_formats: ["pdf", "docx"]
+  pdf_settings:
+    page_size: "A4"
+    margin: "1in"
+    font_size: 12
+  docx_settings:
+    font_name: "Calibri"
+    font_size: 11
+  max_file_size: 104857600
+
+# Security Configuration
+security:
+  api_key_encryption: true
+  ssl_verify: true
+  request_timeout: 30
+  max_request_size: 10485760
+  allowed_domains:
+    - "api.openalex.org"
+    - "api.crossref.org"
+    - "api.semanticscholar.org"
+    - "export.arxiv.org"
+    - "generativelanguage.googleapis.com"
