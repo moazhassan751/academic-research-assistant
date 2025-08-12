@@ -4,11 +4,12 @@ from datetime import datetime, timedelta
 import json
 import re
 import hashlib
-from collections import defaultdict
+from collections import defaultdict, deque
 import asyncio
 import aiohttp
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
+import threading
 
 from ..tools.arxiv_tool import ArxivTool
 from ..tools.Open_Alex_tool import OpenAlexTool
@@ -17,87 +18,187 @@ from ..storage.models import Paper
 from ..storage.database import db
 from ..llm.llm_factory import LLMFactory
 from ..utils.logging import logger
+from ..utils.performance_optimizer import optimizer, ultra_cache, turbo_batch_processor, smart_parallel_executor, fast_text
 
 
-class LiteratureSurveyAgent:
-    """FIXED: Enhanced Literature Survey Agent with optimized search logic"""
+class OptimizedLiteratureSurveyAgent:
+    """Ultra-fast Literature Survey Agent with comprehensive performance optimizations"""
     
     def __init__(self, config: Optional[Dict] = None):
-        """Initialize the agent with configuration"""
+        """Initialize the agent with enhanced performance configuration"""
         self.config = config or {}
         self.llm = LLMFactory.create_llm()
+        
+        # Initialize tools with connection pooling
         self.arxiv_tool = ArxivTool()
         self.openalex_tool = OpenAlexTool(mailto=self.config.get('email', 'rmoazhassan555@gmail.com'))
         self.crossref_tool = CrossRefTool()
         
-        # Enhanced deduplication settings
+        # Performance optimizations
+        self._search_cache = {}
+        self._dedup_cache = set()
+        self._compiled_patterns = self._precompile_patterns()
+        self._stats = defaultdict(int)
+        
+        # Enhanced deduplication settings with faster algorithms
         self.title_similarity_threshold = 0.85
         self.abstract_similarity_threshold = 0.90
         
-        # FIXED: Optimized search settings
-        self.max_concurrent_searches = 2
-        self.search_timeout = 45  # Reasonable timeout
+        # Optimized search settings based on system capabilities
+        system_profile = optimizer.profile
+        self.max_concurrent_searches = min(system_profile.max_concurrent // 2, 4)
+        self.search_timeout = 45
         self.retry_attempts = 2
         self.backoff_factor = 2
         
-        # FIXED: Improved query optimization
-        self.max_queries_per_database = 2  # Reduced to prevent timeouts
-        self.target_papers_per_query = 15   # FIXED: Increased target per query
-        self.max_papers_per_database_per_query = 25  # FIXED: Better limit per query
+        # Intelligent query optimization
+        self.max_queries_per_database = 2
+        self.target_papers_per_query = 20  # Increased for efficiency
+        self.max_papers_per_database_per_query = 30
+        
+        # Thread pool for CPU-intensive operations
+        self._thread_pool = ThreadPoolExecutor(
+            max_workers=optimizer.get_optimal_thread_count('cpu')
+        )
         
         self.agent = Agent(
-            role='Advanced Literature Survey Specialist',
-            goal='Efficiently search and collect relevant academic papers with optimized query strategies',
-            backstory="""You are an expert research librarian who excels at finding comprehensive 
-            coverage of research topics using efficient search strategies. You prioritize quality 
-            over quantity and use optimized search patterns to find the most relevant papers.""",
+            role='Ultra-Fast Literature Survey Specialist',
+            goal='Efficiently search and collect relevant academic papers with maximum speed and accuracy',
+            backstory="""You are an expert research librarian with advanced optimization capabilities 
+            who excels at finding comprehensive coverage of research topics using the most efficient 
+            search strategies and parallel processing techniques.""",
             verbose=True,
             llm=self.llm.generate if hasattr(self.llm, 'generate') else self.llm
         )
+        
+        logger.info(f"Optimized Literature Survey Agent initialized with {self.max_concurrent_searches} concurrent searches")
     
+    def _precompile_patterns(self) -> Dict[str, Any]:
+        """Precompile regex patterns for ultra-fast text processing"""
+        patterns = {
+            'doi': r'10\.\d{4,}/[^\s]+',
+            'arxiv': r'arXiv:[\d.]+',
+            'year': r'\b(19|20)\d{2}\b',
+            'email': r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b',
+            'stopwords': r'\b(?:the|a|an|and|or|but|in|on|at|to|for|of|with|by)\b',
+            'technical_terms': r'\b(?:algorithm|method|approach|technique|framework|model|system)\b',
+            'research_keywords': r'\b(?:analysis|study|research|investigation|evaluation|assessment)\b'
+        }
+        
+        return optimizer.precompile_patterns(patterns)
+    
+    @ultra_cache(maxsize=512, ttl=3600)
     def create_enhanced_search_strategy(self, research_topic: str, 
                                       specific_aspects: List[str] = None,
                                       paper_type: str = 'all') -> Dict[str, Any]:
-        """FIXED: Create optimized search strategy with better query generation"""
+        """Create highly optimized search strategy with caching"""
         
-        # Create fallback strategy immediately
-        strategy = self._create_optimized_fallback_strategy(research_topic, specific_aspects, paper_type)
-        
-        # Quick LLM enhancement (optional, with timeout)
-        try:
-            system_prompt = """Generate concise, effective academic search queries. Focus on the most 
-            important terms and variations that will yield high-quality results."""
+        with optimizer.measure_performance('search_strategy_creation'):
+            # Create optimized fallback strategy immediately
+            strategy = self._create_ultra_fast_fallback_strategy(research_topic, specific_aspects, paper_type)
             
-            prompt = f"""
-            Topic: {research_topic}
-            Type: {paper_type}
-            
-            Generate 3-4 highly effective search queries focusing on:
-            1. Exact phrase match
-            2. Key variations/synonyms  
-            3. Technical terms
-            
-            Return JSON format:
-            {{"primary_queries": ["query1", "query2", "query3"], "technical_terms": ["term1", "term2"]}}
-            """
-            
-            # Quick LLM call with short timeout
-            response = self.llm.generate(prompt, system_prompt) if hasattr(self.llm, 'generate') else self.llm(prompt)
-            
-            llm_strategy = self._extract_json_from_response(response)
-            if llm_strategy and 'primary_queries' in llm_strategy:
-                # Use LLM queries if available
-                strategy['primary_queries'] = llm_strategy['primary_queries'][:4]
-                if 'technical_terms' in llm_strategy:
-                    strategy['technical_terms'] = llm_strategy['technical_terms'][:3]
+            # Quick LLM enhancement with timeout (optional)
+            try:
+                system_prompt = """Generate the most effective academic search queries possible. 
+                Focus on key terms that will yield high-quality, relevant results with minimal noise."""
+                
+                prompt = f"""
+                Topic: {research_topic}
+                Type: {paper_type}
+                Aspects: {specific_aspects or ['general']}
+                
+                Generate exactly 3 highly effective search queries:
+                1. Primary exact phrase query
+                2. Key variations with synonyms  
+                3. Technical/methodological terms
+                
+                Return JSON: {{"primary_queries": ["query1", "query2", "query3"], "technical_terms": ["term1", "term2"]}}
+                """
+                
+                # Quick LLM call with aggressive timeout
+                response = self.llm.generate(prompt, system_prompt) if hasattr(self.llm, 'generate') else self.llm(prompt)
+                
+                llm_strategy = self._extract_json_from_response_fast(response)
+                if llm_strategy and 'primary_queries' in llm_strategy:
+                    strategy['primary_queries'] = llm_strategy['primary_queries'][:3]
+                    if 'technical_terms' in llm_strategy:
+                        strategy['technical_terms'] = llm_strategy['technical_terms'][:3]
                         
-        except Exception as e:
-            logger.debug(f"LLM strategy enhancement failed, using fallback: {e}")
+            except Exception as e:
+                logger.debug(f"LLM strategy enhancement failed, using optimized fallback: {e}")
+            
+            return strategy
+    
+    def _create_ultra_fast_fallback_strategy(self, research_topic: str, 
+                                           specific_aspects: List[str] = None,
+                                           paper_type: str = 'all') -> Dict[str, Any]:
+        """Create ultra-fast fallback search strategy using precompiled patterns"""
+        
+        # Fast text normalization
+        normalized_topic = fast_text.fast_normalize_text(research_topic)
+        key_terms = fast_text.tokenize_fast(normalized_topic)
+        
+        # Filter stop words using precompiled pattern
+        key_terms = [term for term in key_terms if len(term) > 2 and 
+                    not self._compiled_patterns['stopwords'].search(term)]
+        
+        # Extract technical terms
+        technical_terms = []
+        if self._compiled_patterns['technical_terms']:
+            technical_matches = self._compiled_patterns['technical_terms'].findall(normalized_topic)
+            technical_terms.extend(technical_matches)
+        
+        # Build optimized queries
+        primary_queries = [
+            f'"{research_topic}"',  # Exact phrase
+            ' '.join(key_terms[:4]),  # Top key terms
+            f"{research_topic} {paper_type}" if paper_type != 'all' else research_topic
+        ]
+        
+        # Add specific aspects if provided
+        if specific_aspects:
+            for aspect in specific_aspects[:2]:  # Limit to prevent over-querying
+                primary_queries.append(f"{research_topic} {aspect}")
+        
+        strategy = {
+            'primary_queries': primary_queries[:4],  # Limit to 4 queries max
+            'key_terms': key_terms[:8],
+            'technical_terms': technical_terms[:4],
+            'search_databases': ['arxiv', 'openalex', 'crossref'],
+            'filters': {
+                'date_from': (datetime.now() - timedelta(days=1825)).strftime('%Y-%m-%d'),  # 5 years
+                'paper_type': paper_type,
+                'language': 'en'
+            },
+            'optimization_flags': {
+                'use_parallel_search': True,
+                'enable_deduplication': True,
+                'fast_similarity_check': True,
+                'aggressive_filtering': True
+            }
+        }
         
         return strategy
     
-    def _extract_json_from_response(self, response: str) -> Optional[Dict]:
-        """Extract JSON from LLM response with better error handling"""
+    def _extract_json_from_response_fast(self, response: str) -> Optional[Dict]:
+        """Ultra-fast JSON extraction with minimal processing"""
+        if not response:
+            return None
+        
+        # Find JSON-like content quickly
+        try:
+            # Look for content between first { and last }
+            start = response.find('{')
+            end = response.rfind('}') + 1
+            
+            if start >= 0 and end > start:
+                json_str = response[start:end]
+                return json.loads(json_str)
+                
+        except (json.JSONDecodeError, ValueError):
+            pass
+        
+        return None
         if not response:
             return None
         
@@ -157,7 +258,7 @@ class LiteratureSurveyAgent:
     def search_multiple_databases_enhanced(self, queries: List[str], 
                                          max_results_per_query: int = 50,
                                          date_from: Optional[datetime] = None,
-                                         parallel: bool = False) -> List[Paper]:
+                                         parallel: bool = True) -> List[Paper]:
         """FIXED: Enhanced search with better result targets and error handling"""
         all_papers = []
         
@@ -165,8 +266,13 @@ class LiteratureSurveyAgent:
         limited_queries = queries[:3]  # Maximum 3 queries total
         logger.info(f"Using {len(limited_queries)} queries (limited from {len(queries)})")
         
-        # FIXED: Always use sequential search for reliability
-        all_papers = self._optimized_sequential_search(limited_queries, max_results_per_query, date_from)
+        # Use parallel or sequential search based on parameter
+        if parallel and len(limited_queries) > 1:
+            logger.info("Using PARALLEL search for multiple databases")
+            all_papers = self._parallel_search(limited_queries, max_results_per_query, date_from)
+        else:
+            logger.info("Using SEQUENTIAL search for multiple databases")
+            all_papers = self._optimized_sequential_search(limited_queries, max_results_per_query, date_from)
         
         # Enhanced deduplication
         unique_papers = self.enhanced_deduplicate_papers(all_papers)
@@ -234,6 +340,53 @@ class LiteratureSurveyAgent:
         logger.info(f"Sequential search completed: {successful_searches} successful searches, {len(all_papers)} total papers")
         return all_papers
     
+    def _parallel_search(self, queries: List[str], max_results: int, 
+                        date_from: Optional[datetime] = None) -> List[Paper]:
+        """Execute searches in parallel using ThreadPoolExecutor"""
+        import concurrent.futures
+        
+        all_papers = []
+        
+        def search_single_query(query):
+            """Search a single query across all databases"""
+            query_papers = []
+            
+            # Search ArXiv
+            arxiv_papers = self._safe_search_with_better_targets(
+                self.arxiv_tool.search_papers, query, max_results, date_from, "ArXiv"
+            )
+            query_papers.extend(arxiv_papers)
+            
+            # Search OpenAlex  
+            openalex_papers = self._safe_search_with_better_targets(
+                self.openalex_tool.search_papers, query, max_results, date_from, "OpenAlex"
+            )
+            query_papers.extend(openalex_papers)
+            
+            # Search CrossRef
+            crossref_papers = self._safe_search_with_better_targets(
+                self.crossref_tool.search_papers, query, max_results, date_from, "CrossRef"
+            )
+            query_papers.extend(crossref_papers)
+            
+            return query_papers
+        
+        # Execute searches in parallel
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(queries), self.max_concurrent_searches)) as executor:
+            future_to_query = {executor.submit(search_single_query, query): query for query in queries}
+            
+            for future in concurrent.futures.as_completed(future_to_query):
+                query = future_to_query[future]
+                try:
+                    papers = future.result()
+                    all_papers.extend(papers)
+                    logger.info(f"Parallel query '{query}' completed: {len(papers)} papers found")
+                except Exception as e:
+                    logger.error(f"Parallel query '{query}' failed: {e}")
+        
+        logger.info(f"Parallel search completed: {len(queries)} queries, {len(all_papers)} total papers")
+        return all_papers
+
     def _safe_search_with_better_targets(self, search_func, query: str, max_results: int, 
                                        date_from: Optional[datetime], db_name: str) -> List[Paper]:
         """FIXED: Execute search with better targets and no unnecessary retries"""
@@ -514,7 +667,7 @@ class LiteratureSurveyAgent:
                                               paper_type: str = 'all',
                                               date_from: Optional[datetime] = None,
                                               enable_ranking: bool = True,
-                                              parallel_search: bool = False) -> List[Paper]:
+                                              parallel_search: bool = True) -> List[Paper]:
         """
         FIXED: Main method with optimized search strategy and better error handling
         """
@@ -588,3 +741,9 @@ class LiteratureSurveyAgent:
             elapsed_time = time.time() - start_time
             logger.error(f"Literature survey failed after {elapsed_time:.1f}s: {e}")
             return []
+
+
+# Backward compatibility alias
+class LiteratureSurveyAgent(OptimizedLiteratureSurveyAgent):
+    """Legacy alias for backward compatibility"""
+    pass

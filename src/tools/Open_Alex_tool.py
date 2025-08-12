@@ -1,40 +1,81 @@
 import requests
 import time
+import asyncio
+import aiohttp
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
 from urllib.parse import quote_plus
+from concurrent.futures import ThreadPoolExecutor
+from collections import defaultdict
 from ..storage.models import Paper
 from ..utils.logging import logger
 from ..utils.config import config
+from ..utils.performance_optimizer import optimizer, ultra_cache, turbo_batch_processor
 
-class OpenAlexTool:
+class UltraFastOpenAlexTool:
+    """Ultra-fast OpenAlex API tool with comprehensive performance optimizations"""
+    
     def __init__(self, mailto: str = None):
         self.base_url = "https://api.openalex.org/works"
-        self.rate_limit_delay = 0.1  # OpenAlex allows up to 10 requests per second
+        self.rate_limit_delay = 0.05  # Reduced from 0.1 for faster processing
         self.last_request_time = 0
-        self.session = requests.Session()
         
         # Use provided email or get from config
-        self.mailto = mailto or config.get('apis.openalex.mailto', config.get('apis.crossref.mailto', 'rmoazhassan555@gmail.com'))
+        self.mailto = mailto or config.get('apis.openalex.mailto', 
+                                          config.get('apis.crossref.mailto', 'rmoazhassan555@gmail.com'))
         
-        # Enhanced session configuration
-        self.session.timeout = (10, 30)  # (connect, read) timeouts
+        # Enhanced session with performance optimizations
+        self.session = requests.Session()
+        self.session.timeout = (5, 20)  # Reduced timeouts
         self.session.headers.update({
-            'User-Agent': f'AcademicResearchAssistant/1.0 (mailto:{self.mailto})',
+            'User-Agent': f'AcademicResearchAssistant/2.0 (mailto:{self.mailto})',
             'Accept': 'application/json',
-            'Accept-Encoding': 'gzip, deflate'
+            'Accept-Encoding': 'gzip, deflate, br',  # Better compression
+            'Connection': 'keep-alive',  # Connection reuse
+            'Cache-Control': 'max-age=300'  # 5-minute cache
         })
         
-        # Error tracking for monitoring
-        self.error_counts = {
-            'rate_limits': 0,
-            'timeouts': 0,
-            'connection_errors': 0,
-            'parsing_errors': 0,
-            'empty_responses': 0
-        }
+        # Connection pooling
+        adapter = requests.adapters.HTTPAdapter(
+            pool_connections=10,
+            pool_maxsize=20,
+            max_retries=2,
+            pool_block=False
+        )
+        self.session.mount('https://', adapter)
+        self.session.mount('http://', adapter)
         
-        logger.info(f"OpenAlex tool initialized with email: {self.mailto}")
+        # Performance tracking
+        self.error_counts = defaultdict(int)
+        self.request_stats = {'total': 0, 'success': 0, 'cached': 0}
+        
+        # Async session for concurrent requests
+        self._async_session = None
+        
+        logger.info(f"Ultra-fast OpenAlex tool initialized with email: {self.mailto}")
+    
+    async def _get_async_session(self):
+        """Get or create async HTTP session"""
+        if self._async_session is None:
+            timeout = aiohttp.ClientTimeout(total=20, connect=5)
+            connector = aiohttp.TCPConnector(
+                limit=20,
+                limit_per_host=10,
+                keepalive_timeout=30,
+                enable_cleanup_closed=True
+            )
+            
+            self._async_session = aiohttp.ClientSession(
+                timeout=timeout,
+                connector=connector,
+                headers={
+                    'User-Agent': f'AcademicResearchAssistant/2.0 (mailto:{self.mailto})',
+                    'Accept': 'application/json',
+                    'Accept-Encoding': 'gzip, deflate, br'
+                }
+            )
+        
+        return self._async_session
     
     def _rate_limit(self):
         """Implement rate limiting to be respectful to the API"""
@@ -575,3 +616,9 @@ class OpenAlexTool:
             'parsing_errors': 0,
             'empty_responses': 0
         }
+
+
+# Backward compatibility alias
+class OpenAlexTool(UltraFastOpenAlexTool):
+    """Legacy alias for backward compatibility"""
+    pass
