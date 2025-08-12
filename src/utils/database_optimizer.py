@@ -1,282 +1,418 @@
 """
-Database optimization utilities for Academic Research Assistant
+Enhanced database optimization utilities for Academic Research Assistant
 """
 
 import sqlite3
+import aiosqlite
+import asyncio
 import logging
-from typing import List, Dict, Any
+import time
+import threading
+from typing import List, Dict, Any, Optional, Tuple
 from pathlib import Path
+from contextlib import contextmanager, asynccontextmanager
+from collections import defaultdict
+import json
+
+from .performance_optimizer import optimizer
 
 logger = logging.getLogger(__name__)
 
 
-class DatabaseOptimizer:
-    """Database optimization and indexing utilities"""
+class EnhancedDatabaseOptimizer:
+    """Advanced database optimization with performance monitoring and adaptive tuning"""
     
     def __init__(self, db_path: str):
         self.db_path = db_path
-    
-    def create_indexes(self) -> None:
-        """Create indexes to improve query performance"""
-        indexes = [
-            # Papers table indexes
-            "CREATE INDEX IF NOT EXISTS idx_papers_title ON papers(title)",
-            "CREATE INDEX IF NOT EXISTS idx_papers_authors ON papers(authors)",
-            "CREATE INDEX IF NOT EXISTS idx_papers_published_date ON papers(published_date)",
-            "CREATE INDEX IF NOT EXISTS idx_papers_venue ON papers(venue)",
-            "CREATE INDEX IF NOT EXISTS idx_papers_citations ON papers(citations DESC)",
-            "CREATE INDEX IF NOT EXISTS idx_papers_doi ON papers(doi)",
-            "CREATE INDEX IF NOT EXISTS idx_papers_arxiv_id ON papers(arxiv_id)",
-            "CREATE INDEX IF NOT EXISTS idx_papers_created_at ON papers(created_at)",
+        self.stats_cache = {}
+        self._optimization_lock = threading.Lock()
+        
+        # Performance tracking
+        self.query_stats = defaultdict(list)
+        self.index_usage = defaultdict(int)
+        self.optimization_history = []
+        
+    def create_advanced_indexes(self) -> Dict[str, Any]:
+        """Create comprehensive indexes with performance monitoring"""
+        results = {'created': [], 'failed': [], 'skipped': []}
+        
+        # Enhanced index definitions with performance hints
+        advanced_indexes = [
+            # Core performance indexes
+            ("idx_papers_title_hash", "CREATE INDEX IF NOT EXISTS idx_papers_title_hash ON papers(title COLLATE NOCASE)", "High"),
+            ("idx_papers_authors_normalized", "CREATE INDEX IF NOT EXISTS idx_papers_authors_normalized ON papers(LOWER(authors))", "High"),
+            ("idx_papers_published_date_desc", "CREATE INDEX IF NOT EXISTS idx_papers_published_date_desc ON papers(published_date DESC)", "High"),
+            ("idx_papers_venue_normalized", "CREATE INDEX IF NOT EXISTS idx_papers_venue_normalized ON papers(LOWER(venue))", "Medium"),
+            ("idx_papers_citations_desc", "CREATE INDEX IF NOT EXISTS idx_papers_citations_desc ON papers(citations DESC)", "High"),
+            ("idx_papers_doi_unique", "CREATE UNIQUE INDEX IF NOT EXISTS idx_papers_doi_unique ON papers(doi) WHERE doi IS NOT NULL", "High"),
+            ("idx_papers_arxiv_unique", "CREATE UNIQUE INDEX IF NOT EXISTS idx_papers_arxiv_unique ON papers(arxiv_id) WHERE arxiv_id IS NOT NULL", "High"),
             
-            # Research notes indexes
-            "CREATE INDEX IF NOT EXISTS idx_notes_paper_id ON research_notes(paper_id)",
-            "CREATE INDEX IF NOT EXISTS idx_notes_note_type ON research_notes(note_type)",
-            "CREATE INDEX IF NOT EXISTS idx_notes_confidence ON research_notes(confidence DESC)",
-            "CREATE INDEX IF NOT EXISTS idx_notes_created_at ON research_notes(created_at)",
+            # Time-based indexes for performance
+            ("idx_papers_created_at_desc", "CREATE INDEX IF NOT EXISTS idx_papers_created_at_desc ON papers(created_at DESC)", "Medium"),
+            ("idx_papers_recent", "CREATE INDEX IF NOT EXISTS idx_papers_recent ON papers(published_date) WHERE published_date >= '2020-01-01'", "High"),
             
-            # Research themes indexes
-            "CREATE INDEX IF NOT EXISTS idx_themes_frequency ON research_themes(frequency DESC)",
-            "CREATE INDEX IF NOT EXISTS idx_themes_confidence ON research_themes(confidence DESC)",
-            "CREATE INDEX IF NOT EXISTS idx_themes_created_at ON research_themes(created_at)",
+            # Research notes optimized indexes
+            ("idx_notes_paper_id_type", "CREATE INDEX IF NOT EXISTS idx_notes_paper_id_type ON research_notes(paper_id, note_type)", "High"),
+            ("idx_notes_confidence_desc", "CREATE INDEX IF NOT EXISTS idx_notes_confidence_desc ON research_notes(confidence DESC)", "Medium"),
+            ("idx_notes_content_length", "CREATE INDEX IF NOT EXISTS idx_notes_content_length ON research_notes(LENGTH(content) DESC)", "Low"),
             
-            # Citations indexes
-            "CREATE INDEX IF NOT EXISTS idx_citations_paper_id ON citations(paper_id)",
-            "CREATE INDEX IF NOT EXISTS idx_citations_key ON citations(citation_key)",
+            # Research themes advanced indexes
+            ("idx_themes_frequency_confidence", "CREATE INDEX IF NOT EXISTS idx_themes_frequency_confidence ON research_themes(frequency DESC, confidence DESC)", "High"),
+            ("idx_themes_title_unique", "CREATE UNIQUE INDEX IF NOT EXISTS idx_themes_title_unique ON research_themes(title COLLATE NOCASE)", "Medium"),
             
-            # Full-text search indexes
-            "CREATE INDEX IF NOT EXISTS idx_papers_title_fts ON papers(title COLLATE NOCASE)",
-            "CREATE INDEX IF NOT EXISTS idx_papers_abstract_fts ON papers(abstract COLLATE NOCASE)",
-            "CREATE INDEX IF NOT EXISTS idx_notes_content_fts ON research_notes(content COLLATE NOCASE)",
+            # Citations performance indexes
+            ("idx_citations_paper_format", "CREATE INDEX IF NOT EXISTS idx_citations_paper_format ON citations(paper_id, citation_key)", "High"),
             
-            # Composite indexes for common queries
-            "CREATE INDEX IF NOT EXISTS idx_papers_date_citations ON papers(published_date, citations DESC)",
-            "CREATE INDEX IF NOT EXISTS idx_notes_paper_type ON research_notes(paper_id, note_type)",
+            # Full-text search optimizations
+            ("idx_papers_abstract_words", "CREATE INDEX IF NOT EXISTS idx_papers_abstract_words ON papers(abstract) WHERE LENGTH(abstract) > 100", "Medium"),
+            ("idx_notes_content_words", "CREATE INDEX IF NOT EXISTS idx_notes_content_words ON research_notes(content) WHERE LENGTH(content) > 50", "Medium"),
+            
+            # Composite performance indexes for common query patterns
+            ("idx_papers_search_rank", "CREATE INDEX IF NOT EXISTS idx_papers_search_rank ON papers(published_date DESC, citations DESC, venue)", "High"),
+            ("idx_papers_quality_score", "CREATE INDEX IF NOT EXISTS idx_papers_quality_score ON papers(citations DESC, LENGTH(abstract) DESC)", "Medium"),
+            ("idx_notes_paper_confidence", "CREATE INDEX IF NOT EXISTS idx_notes_paper_confidence ON research_notes(paper_id, confidence DESC, note_type)", "High"),
+            
+            # Partial indexes for better performance
+            ("idx_papers_high_citations", "CREATE INDEX IF NOT EXISTS idx_papers_high_citations ON papers(title, authors) WHERE citations >= 10", "Medium"),
+            ("idx_papers_with_doi", "CREATE INDEX IF NOT EXISTS idx_papers_with_doi ON papers(doi, published_date) WHERE doi IS NOT NULL", "High"),
+            ("idx_papers_with_abstract", "CREATE INDEX IF NOT EXISTS idx_papers_with_abstract ON papers(title, authors) WHERE abstract IS NOT NULL AND LENGTH(abstract) > 100", "Medium"),
         ]
         
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=30.0) as conn:
             cursor = conn.cursor()
             
-            for index_sql in indexes:
+            for index_name, index_sql, priority in advanced_indexes:
                 try:
+                    start_time = time.time()
                     cursor.execute(index_sql)
-                    logger.debug(f"Created index: {index_sql}")
+                    creation_time = time.time() - start_time
+                    
+                    results['created'].append({
+                        'name': index_name,
+                        'sql': index_sql,
+                        'priority': priority,
+                        'creation_time': creation_time
+                    })
+                    
+                    logger.debug(f"Created {priority} priority index {index_name} in {creation_time:.3f}s")
+                    
                 except sqlite3.Error as e:
-                    logger.warning(f"Failed to create index: {e}")
+                    error_msg = f"Failed to create index {index_name}: {e}"
+                    results['failed'].append({'name': index_name, 'error': str(e)})
+                    logger.warning(error_msg)
             
             conn.commit()
-            logger.info(f"Database indexes created/updated for {self.db_path}")
-    
-    def optimize_database(self) -> Dict[str, Any]:
-        """Run comprehensive database optimization"""
-        stats = {}
+            
+        logger.info(f"Advanced indexes: {len(results['created'])} created, {len(results['failed'])} failed")
+        return results
+
+    @contextmanager 
+    def measure_query_performance(self, operation_name: str):
+        """Measure and log query performance"""
+        start_time = time.perf_counter()
+        start_memory = optimizer.get_performance_summary()['system_info']['current_memory_percent']
         
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
+        try:
+            yield
+        finally:
+            execution_time = time.perf_counter() - start_time
+            end_memory = optimizer.get_performance_summary()['system_info']['current_memory_percent']
             
-            # Get initial stats
-            stats['initial_size'] = Path(self.db_path).stat().st_size
+            self.query_stats[operation_name].append({
+                'execution_time': execution_time,
+                'memory_delta': end_memory - start_memory,
+                'timestamp': time.time()
+            })
             
-            try:
-                # Analyze database for query optimization
-                cursor.execute("ANALYZE")
-                stats['analyze_completed'] = True
+            # Log slow queries
+            if execution_time > 1.0:
+                logger.warning(f"Slow query {operation_name}: {execution_time:.3f}s")
+
+    def optimize_database_comprehensive(self) -> Dict[str, Any]:
+        """Run comprehensive database optimization with performance monitoring"""
+        with self._optimization_lock:
+            optimization_start = time.time()
+            results = {
+                'started_at': time.strftime('%Y-%m-%d %H:%M:%S'),
+                'operations': [],
+                'performance_gains': {},
+                'warnings': []
+            }
+            
+            with sqlite3.connect(self.db_path, timeout=60.0) as conn:
+                cursor = conn.cursor()
                 
-                # Vacuum database to reclaim space and defragment
-                cursor.execute("VACUUM")
-                stats['vacuum_completed'] = True
+                # Get baseline metrics
+                baseline_stats = self._get_database_stats(cursor)
+                results['baseline'] = baseline_stats
                 
-                # Update table statistics
-                cursor.execute("PRAGMA optimize")
-                stats['optimize_completed'] = True
+                # 1. Analyze database for query optimization
+                try:
+                    with self.measure_query_performance('analyze'):
+                        cursor.execute("ANALYZE")
+                    results['operations'].append({'analyze': 'completed'})
+                except Exception as e:
+                    results['warnings'].append(f"ANALYZE failed: {e}")
                 
-                # Set optimal pragmas
-                optimizations = [
-                    "PRAGMA journal_mode=WAL",  # Write-Ahead Logging for better concurrency
-                    "PRAGMA synchronous=NORMAL",  # Balance between speed and safety
-                    "PRAGMA cache_size=10000",  # 10MB cache (default is 2MB)
-                    "PRAGMA temp_store=MEMORY",  # Store temp tables in memory
-                    "PRAGMA mmap_size=268435456",  # 256MB memory map
+                # 2. Update statistics for query planner
+                try:
+                    cursor.execute("PRAGMA optimize")
+                    results['operations'].append({'optimize': 'completed'})
+                except Exception as e:
+                    results['warnings'].append(f"PRAGMA optimize failed: {e}")
+                
+                # 3. Apply advanced performance pragmas
+                performance_pragmas = [
+                    ("journal_mode", "WAL"),           # Write-Ahead Logging
+                    ("synchronous", "NORMAL"),         # Balanced safety/speed  
+                    ("cache_size", "20000"),           # 20MB cache
+                    ("temp_store", "MEMORY"),          # Temp tables in memory
+                    ("mmap_size", "268435456"),        # 256MB memory map
+                    ("page_size", "4096"),             # Optimal page size
+                    ("auto_vacuum", "INCREMENTAL"),    # Incremental vacuuming
+                    ("secure_delete", "OFF"),          # Faster deletes
+                    ("count_changes", "OFF"),          # Disable change counting
+                    ("query_only", "OFF"),             # Allow writes
+                    ("threads", str(min(4, optimizer.cpu_count))),  # Multi-threading
                 ]
                 
-                for pragma in optimizations:
-                    cursor.execute(pragma)
+                applied_pragmas = []
+                for pragma_name, pragma_value in performance_pragmas:
+                    try:
+                        cursor.execute(f"PRAGMA {pragma_name}={pragma_value}")
+                        applied_pragmas.append(f"{pragma_name}={pragma_value}")
+                    except Exception as e:
+                        results['warnings'].append(f"PRAGMA {pragma_name} failed: {e}")
                 
-                stats['pragma_optimizations'] = len(optimizations)
+                results['operations'].append({'pragmas_applied': applied_pragmas})
                 
-            except sqlite3.Error as e:
-                logger.error(f"Database optimization error: {e}")
-                stats['error'] = str(e)
-            
-            # Get final stats
-            stats['final_size'] = Path(self.db_path).stat().st_size
-            stats['size_reduction'] = stats['initial_size'] - stats['final_size']
-            
-            # Get database statistics
-            cursor.execute("PRAGMA page_count")
-            stats['page_count'] = cursor.fetchone()[0]
-            
-            cursor.execute("PRAGMA page_size")
-            stats['page_size'] = cursor.fetchone()[0]
-            
-            cursor.execute("PRAGMA freelist_count")
-            stats['free_pages'] = cursor.fetchone()[0]
-        
-        logger.info(f"Database optimization completed: {stats}")
-        return stats
-    
-    def get_query_plan(self, query: str) -> List[Dict[str, Any]]:
-        """Get query execution plan for optimization analysis"""
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-            
-            # Get query plan
-            cursor.execute(f"EXPLAIN QUERY PLAN {query}")
-            plan = cursor.fetchall()
-            
-            # Convert to structured format
-            structured_plan = []
-            for row in plan:
-                structured_plan.append({
-                    'id': row[0],
-                    'parent': row[1],
-                    'notused': row[2],
-                    'detail': row[3]
-                })
-            
-            return structured_plan
-    
-    def analyze_slow_queries(self) -> Dict[str, Any]:
-        """Analyze potentially slow queries and suggest optimizations"""
-        slow_query_patterns = [
-            # Queries without indexes
-            "SELECT * FROM papers WHERE title LIKE '%search%'",
-            "SELECT * FROM research_notes WHERE content LIKE '%keyword%'",
-            "SELECT * FROM papers WHERE published_date > '2020-01-01' ORDER BY citations DESC",
-            "SELECT * FROM research_notes WHERE paper_id IN (SELECT id FROM papers WHERE venue = 'Nature')",
-            
-            # Aggregation queries
-            "SELECT COUNT(*) FROM papers WHERE published_date > '2020-01-01'",
-            "SELECT venue, COUNT(*) FROM papers GROUP BY venue ORDER BY COUNT(*) DESC",
-            "SELECT note_type, AVG(confidence) FROM research_notes GROUP BY note_type",
-        ]
-        
-        analysis = {'queries': []}
-        
-        for query in slow_query_patterns:
-            try:
-                plan = self.get_query_plan(query)
+                # 4. Vacuum if needed (only if database is fragmented)
+                try:
+                    cursor.execute("PRAGMA freelist_count")
+                    freelist_count = cursor.fetchone()[0]
+                    
+                    if freelist_count > 1000:  # Significant fragmentation
+                        logger.info("Database fragmentation detected, running VACUUM...")
+                        with self.measure_query_performance('vacuum'):
+                            cursor.execute("VACUUM")
+                        results['operations'].append({'vacuum': f'completed (freed {freelist_count} pages)'})
+                    else:
+                        results['operations'].append({'vacuum': 'skipped (minimal fragmentation)'})
+                        
+                except Exception as e:
+                    results['warnings'].append(f"VACUUM operation failed: {e}")
                 
-                # Analyze plan for potential issues
-                uses_index = any('USING INDEX' in step['detail'] for step in plan)
-                has_scan = any('SCAN TABLE' in step['detail'] for step in plan)
+                # 5. Create/update advanced indexes
+                index_results = self.create_advanced_indexes()
+                results['operations'].append({'indexes': index_results})
                 
-                analysis['queries'].append({
-                    'query': query,
-                    'uses_index': uses_index,
-                    'has_table_scan': has_scan,
-                    'plan': plan,
-                    'recommendation': self._get_optimization_recommendation(plan)
-                })
+                # Get post-optimization metrics
+                final_stats = self._get_database_stats(cursor)
+                results['final'] = final_stats
                 
-            except sqlite3.Error as e:
-                logger.warning(f"Could not analyze query {query}: {e}")
-        
-        return analysis
-    
-    def _get_optimization_recommendation(self, plan: List[Dict[str, Any]]) -> str:
-        """Get optimization recommendation based on query plan"""
-        recommendations = []
-        
-        for step in plan:
-            detail = step['detail']
+                # Calculate performance improvements
+                if baseline_stats and final_stats:
+                    results['performance_gains'] = {
+                        'page_count_change': final_stats.get('page_count', 0) - baseline_stats.get('page_count', 0),
+                        'freelist_reduction': baseline_stats.get('freelist_count', 0) - final_stats.get('freelist_count', 0),
+                        'cache_efficiency': final_stats.get('cache_size', 0) / max(baseline_stats.get('cache_size', 1), 1)
+                    }
             
-            if 'SCAN TABLE' in detail:
-                recommendations.append("Consider adding an index to avoid full table scan")
+            optimization_time = time.time() - optimization_start
+            results['total_time'] = optimization_time
+            results['completed_at'] = time.strftime('%Y-%m-%d %H:%M:%S')
             
-            if 'TEMP B-TREE' in detail:
-                recommendations.append("Consider adding an index to avoid temporary sorting")
+            # Store optimization history
+            self.optimization_history.append(results)
             
-            if 'USING INDEX' not in detail and ('WHERE' in detail or 'ORDER BY' in detail):
-                recommendations.append("Query might benefit from a composite index")
-        
-        return "; ".join(recommendations) if recommendations else "Query appears optimized"
-    
-    def get_database_statistics(self) -> Dict[str, Any]:
+            logger.info(f"Database optimization completed in {optimization_time:.2f}s")
+            return results
+
+    def _get_database_stats(self, cursor) -> Dict[str, Any]:
         """Get comprehensive database statistics"""
         stats = {}
         
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-            
-            # Table row counts
-            tables = ['papers', 'research_notes', 'research_themes', 'citations']
-            stats['table_counts'] = {}
-            
-            for table in tables:
-                try:
-                    cursor.execute(f"SELECT COUNT(*) FROM {table}")
-                    count = cursor.fetchone()[0]
-                    stats['table_counts'][table] = count
-                except sqlite3.Error:
-                    stats['table_counts'][table] = 0
-            
-            # Database size info
-            stats['file_size'] = Path(self.db_path).stat().st_size
-            
-            cursor.execute("PRAGMA page_count")
-            page_count = cursor.fetchone()[0]
-            
-            cursor.execute("PRAGMA page_size")
-            page_size = cursor.fetchone()[0]
-            
-            stats['total_pages'] = page_count
-            stats['page_size'] = page_size
-            stats['database_size'] = page_count * page_size
-            
-            cursor.execute("PRAGMA freelist_count")
-            stats['free_pages'] = cursor.fetchone()[0]
-            stats['free_space'] = stats['free_pages'] * page_size
-            
-            # Index information
-            cursor.execute("SELECT name FROM sqlite_master WHERE type='index' AND sql IS NOT NULL")
-            stats['indexes'] = [row[0] for row in cursor.fetchall()]
-            stats['index_count'] = len(stats['indexes'])
-            
-            # Journal mode and other settings
-            cursor.execute("PRAGMA journal_mode")
-            stats['journal_mode'] = cursor.fetchone()[0]
-            
-            cursor.execute("PRAGMA synchronous")
-            stats['synchronous'] = cursor.fetchone()[0]
-            
-            cursor.execute("PRAGMA cache_size")
-            stats['cache_size'] = cursor.fetchone()[0]
-        
-        return stats
-    
-    def maintenance_routine(self) -> Dict[str, Any]:
-        """Run routine database maintenance"""
-        results = {}
-        
         try:
-            # Create/update indexes
-            self.create_indexes()
-            results['indexes_updated'] = True
+            # Basic database info
+            pragmas_to_check = ['page_count', 'freelist_count', 'cache_size', 'journal_mode', 'synchronous']
+            for pragma in pragmas_to_check:
+                try:
+                    cursor.execute(f"PRAGMA {pragma}")
+                    result = cursor.fetchone()
+                    stats[pragma] = result[0] if result else None
+                except:
+                    pass
             
-            # Optimize database
-            optimization_stats = self.optimize_database()
-            results['optimization'] = optimization_stats
+            # Table statistics
+            cursor.execute("""
+                SELECT name, COUNT(*) as count 
+                FROM sqlite_master 
+                WHERE type='table' 
+                GROUP BY name
+            """)
+            stats['table_count'] = len(cursor.fetchall())
             
-            # Get final statistics
-            results['statistics'] = self.get_database_statistics()
+            # Index statistics
+            cursor.execute("""
+                SELECT COUNT(*) 
+                FROM sqlite_master 
+                WHERE type='index'
+            """)
+            stats['index_count'] = cursor.fetchone()[0]
             
-            results['success'] = True
-            results['message'] = "Database maintenance completed successfully"
+            # Database size
+            stats['file_size'] = Path(self.db_path).stat().st_size if Path(self.db_path).exists() else 0
             
         except Exception as e:
-            results['success'] = False
+            logger.debug(f"Error getting database stats: {e}")
+            
+        return stats
+
+    async def optimize_async_connections(self, connection_pool_size: int = 10) -> Dict[str, Any]:
+        """Optimize async database connections for better performance"""
+        results = {
+            'pool_size': connection_pool_size,
+            'optimizations_applied': [],
+            'performance_settings': {}
+        }
+        
+        # Optimal connection settings for async operations
+        async_optimizations = [
+            ("journal_mode", "WAL"),
+            ("synchronous", "NORMAL"),
+            ("cache_size", "15000"),  # 15MB for async operations
+            ("temp_store", "MEMORY"),
+            ("mmap_size", "536870912"),  # 512MB for large datasets
+            ("threadsafe", "1"),
+            ("read_uncommitted", "1"),  # For read-heavy workloads
+        ]
+        
+        try:
+            async with aiosqlite.connect(self.db_path, timeout=30.0) as conn:
+                for setting_name, setting_value in async_optimizations:
+                    try:
+                        await conn.execute(f"PRAGMA {setting_name}={setting_value}")
+                        results['optimizations_applied'].append(f"{setting_name}={setting_value}")
+                    except Exception as e:
+                        logger.debug(f"Async optimization {setting_name} failed: {e}")
+                
+                await conn.commit()
+                
+                # Test connection performance
+                start_time = time.time()
+                await conn.execute("SELECT 1")
+                response_time = time.time() - start_time
+                
+                results['performance_settings'] = {
+                    'connection_test_time': response_time,
+                    'optimizations_count': len(results['optimizations_applied'])
+                }
+                
+        except Exception as e:
             results['error'] = str(e)
-            logger.error(f"Database maintenance failed: {e}")
+            logger.error(f"Async database optimization failed: {e}")
         
         return results
+
+    def get_query_performance_report(self) -> Dict[str, Any]:
+        """Generate comprehensive query performance report"""
+        report = {
+            'total_queries': sum(len(queries) for queries in self.query_stats.values()),
+            'operations': {},
+            'slow_queries': [],
+            'recommendations': []
+        }
+        
+        for operation, queries in self.query_stats.items():
+            if not queries:
+                continue
+                
+            times = [q['execution_time'] for q in queries]
+            memory_deltas = [q['memory_delta'] for q in queries]
+            
+            operation_stats = {
+                'count': len(queries),
+                'avg_time': sum(times) / len(times),
+                'max_time': max(times),
+                'min_time': min(times),
+                'avg_memory_delta': sum(memory_deltas) / len(memory_deltas),
+                'total_time': sum(times)
+            }
+            
+            report['operations'][operation] = operation_stats
+            
+            # Identify slow queries
+            for query in queries:
+                if query['execution_time'] > 2.0:  # Slower than 2 seconds
+                    report['slow_queries'].append({
+                        'operation': operation,
+                        'time': query['execution_time'],
+                        'memory_delta': query['memory_delta']
+                    })
+        
+        # Generate recommendations
+        if report['slow_queries']:
+            report['recommendations'].append("Consider adding indexes for slow queries")
+        
+        avg_times = [op['avg_time'] for op in report['operations'].values()]
+        if avg_times and max(avg_times) > 1.0:
+            report['recommendations'].append("Database optimization recommended")
+        
+        return report
+
+    def maintenance_routine(self) -> Dict[str, Any]:
+        """Comprehensive maintenance routine for optimal performance"""
+        with optimizer.measure_performance('database_maintenance'):
+            maintenance_results = {}
+            
+            # Step 1: Performance analysis
+            maintenance_results['performance_report'] = self.get_query_performance_report()
+            
+            # Step 2: Database optimization
+            maintenance_results['optimization'] = self.optimize_database_comprehensive()
+            
+            # Step 3: Clear old statistics (keep last 1000 entries per operation)
+            cleaned_stats = 0
+            for operation in self.query_stats:
+                if len(self.query_stats[operation]) > 1000:
+                    # Keep newest 1000 entries
+                    self.query_stats[operation] = sorted(
+                        self.query_stats[operation], 
+                        key=lambda x: x['timestamp']
+                    )[-1000:]
+                    cleaned_stats += 1
+            
+            maintenance_results['stats_cleanup'] = {'operations_cleaned': cleaned_stats}
+            
+            # Step 4: Memory cleanup
+            collected = optimizer.optimize_gc(aggressive=True)
+            maintenance_results['memory_cleanup'] = {'objects_collected': collected}
+            
+            logger.info("Database maintenance routine completed")
+            return maintenance_results
+
+    def create_indexes(self) -> None:
+        """Legacy method - redirects to enhanced version"""
+        results = self.create_advanced_indexes()
+        logger.info(f"Indexes created: {len(results['created'])}")
+
+
+# Backward compatibility alias
+class DatabaseOptimizer(EnhancedDatabaseOptimizer):
+    """Legacy alias for backward compatibility"""
+    
+    def create_indexes(self) -> None:
+        """Legacy method - redirects to enhanced version"""
+        results = self.create_advanced_indexes()
+        logger.info(f"Indexes created: {len(results['created'])}")
+    
+    def optimize_database(self) -> Dict[str, Any]:
+        """Legacy method - redirects to enhanced version"""
+        results = self.optimize_database_comprehensive()
+        return {
+            'analyze_completed': 'analyze' in str(results.get('operations', [])),
+            'vacuum_completed': 'vacuum' in str(results.get('operations', [])),
+            'optimize_completed': 'optimize' in str(results.get('operations', [])),
+            'pragma_optimizations': len(results.get('operations', [])),
+            'total_time': results.get('total_time', 0)
+        }

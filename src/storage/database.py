@@ -2,18 +2,26 @@ import sqlite3
 import sqlite_utils
 import aiosqlite
 import asyncio
-from pathlib import Path
-from typing import List, Optional, Dict, Any
+import time
 import threading
+from pathlib import Path
+from typing import List, Optional, Dict, Any, AsyncGenerator, Union, Tuple
 from contextlib import contextmanager, asynccontextmanager
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from collections import defaultdict
+import weakref
+import json
+
 from .models import Paper, ResearchNote, ResearchTheme, Citation
 from ..utils.config import config
 from ..utils.logging import logger
-from ..utils.database_optimizer import DatabaseOptimizer
+from ..utils.database_optimizer import EnhancedDatabaseOptimizer
+from ..utils.performance_optimizer import optimizer, ultra_cache, turbo_batch_processor
 
 class DatabaseManager:
-    def __init__(self, db_path: Optional[str] = None):
+    def __init__(self, db_path: Optional[str] = None, pool_size: int = 10):
         self.db_path = db_path or config.get('storage.database_path', 'data/research.db')
+        self.pool_size = pool_size
         
         # Create data directory if it doesn't exist
         Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
@@ -24,11 +32,23 @@ class DatabaseManager:
         # Keep track of column names for each table - initialize BEFORE _initialize_tables()
         self._column_cache = {}
         
+        # Performance optimizations
+        self._query_cache = {}
+        self._cache_ttl = 300  # 5 minutes
+        
+        # Thread pool for CPU-intensive operations
+        self._thread_pool = ThreadPoolExecutor(
+            max_workers=optimizer.get_optimal_thread_count('cpu')
+        )
+        
         # Initialize database optimizer
-        self.optimizer = DatabaseOptimizer(self.db_path)
+        self.optimizer = EnhancedDatabaseOptimizer(self.db_path)
         
         # Initialize tables using the main thread connection
         self._initialize_tables()
+        
+        # Apply performance pragmas
+        self._apply_performance_optimizations()
         
         # Run initial optimization
         try:
@@ -36,6 +56,21 @@ class DatabaseManager:
             logger.debug("Database indexes initialized successfully")
         except Exception as e:
             logger.warning(f"Failed to initialize database indexes: {e}")
+    
+    def _apply_performance_optimizations(self):
+        """Apply SQLite performance optimizations"""
+        try:
+            with self._get_raw_connection() as conn:
+                # Enable performance optimizations
+                conn.execute("PRAGMA journal_mode=WAL")
+                conn.execute("PRAGMA synchronous=NORMAL")
+                conn.execute("PRAGMA cache_size=20000")  # 20MB cache
+                conn.execute("PRAGMA temp_store=MEMORY")
+                conn.execute("PRAGMA mmap_size=268435456")  # 256MB mmap
+                conn.commit()
+                logger.info("Performance optimizations applied to database")
+        except Exception as e:
+            logger.warning(f"Failed to apply performance optimizations: {e}")
     
     def _get_db(self) -> sqlite_utils.Database:
         """Get thread-local database connection"""
@@ -255,6 +290,35 @@ class DatabaseManager:
             logger.error(f"Error saving paper {paper.id}: {e}")
             return False
     
+    @turbo_batch_processor(batch_size=50, max_concurrent=4)
+    def save_papers_batch(self, papers: List[Paper]) -> List[str]:
+        """High-performance batch paper saving"""
+        if not papers:
+            return []
+        
+        saved_ids = []
+        
+        try:
+            with self._transaction():
+                db = self._get_db()
+                
+                # Prepare batch data
+                paper_dicts = [paper.to_dict() for paper in papers]
+                
+                # Batch insert with replace
+                db['papers'].insert_all(paper_dicts, replace=True)
+                
+                # Collect saved IDs
+                saved_ids = [paper.id for paper in papers]
+                
+                logger.info(f"Batch saved {len(saved_ids)} papers")
+                
+        except Exception as e:
+            logger.error(f"Batch paper save error: {e}")
+            raise
+        
+        return saved_ids
+    
     def get_paper(self, paper_id: str) -> Optional[Paper]:
         """Get a paper by ID with thread safety"""
         try:
@@ -272,25 +336,59 @@ class DatabaseManager:
             return None
     
     def search_papers(self, query: str, limit: int = 50, sort_by: str = 'relevance') -> List[Paper]:
-        """Search papers by title or abstract with sorting and thread safety"""
+        """Search papers by title or abstract with caching and performance optimization"""
+        # Check cache first
+        cache_key = f"search_{hash(query)}_{limit}_{sort_by}"
+        
+        if cache_key in self._query_cache:
+            cached_result = self._query_cache[cache_key]
+            if time.time() - cached_result['timestamp'] < self._cache_ttl:
+                logger.debug(f"Cache hit for search query: '{query}'")
+                return cached_result['data']
+        
         try:
-            # Build ORDER BY clause based on sort_by parameter
+            # Build optimized ORDER BY clause based on sort_by parameter
             if sort_by == 'date':
                 order_clause = "ORDER BY published_date DESC"
             elif sort_by == 'citations':
                 order_clause = "ORDER BY citations DESC"
-            else:  # relevance (default)
-                order_clause = "ORDER BY citations DESC"
+            else:  # relevance (default) - enhanced relevance scoring
+                order_clause = """
+                ORDER BY (CASE 
+                    WHEN title LIKE ? THEN 20
+                    WHEN abstract LIKE ? THEN 10
+                    WHEN authors LIKE ? THEN 5
+                    ELSE 1 END) DESC, citations DESC
+                """
             
-            sql = f"""
-                SELECT * FROM papers 
-                WHERE title LIKE ? OR abstract LIKE ?
-                {order_clause}
-                LIMIT ?
-            """
+            # Optimized search query with relevance scoring
+            if sort_by == 'relevance':
+                sql = f"""
+                    SELECT *, 
+                           (CASE 
+                            WHEN title LIKE ? THEN 20
+                            WHEN abstract LIKE ? THEN 10
+                            WHEN authors LIKE ? THEN 5
+                            ELSE 1 END) as relevance_score
+                    FROM papers 
+                    WHERE title LIKE ? OR abstract LIKE ? OR authors LIKE ?
+                    {order_clause}
+                    LIMIT ?
+                """
+                search_term = f"%{query}%"
+                params = [search_term] * 9 + [limit]
+            else:
+                sql = f"""
+                    SELECT * FROM papers 
+                    WHERE title LIKE ? OR abstract LIKE ? OR authors LIKE ?
+                    {order_clause}
+                    LIMIT ?
+                """
+                search_term = f"%{query}%"
+                params = [search_term, search_term, search_term, limit]
             
             conn = self._get_raw_connection()
-            cursor = conn.execute(sql, [f"%{query}%", f"%{query}%", limit])
+            cursor = conn.execute(sql, params)
             rows = cursor.fetchall()
             
             papers = []
@@ -306,7 +404,13 @@ class DatabaseManager:
                     logger.warning(f"Error processing paper row: {e}")
                     continue
             
-            logger.info(f"Found {len(papers)} papers for query: '{query}'")
+            # Cache the result
+            self._query_cache[cache_key] = {
+                'data': papers,
+                'timestamp': time.time()
+            }
+            
+            logger.info(f"Found {len(papers)} papers for query: '{query}' (cached)")
             return papers
             
         except Exception as e:
@@ -506,7 +610,7 @@ class DatabaseManager:
             return {}
     
     def close_connections(self):
-        """Close thread-local connections"""
+        """Close thread-local connections and cleanup resources"""
         try:
             if hasattr(self._local, 'db') and self._local.db is not None:
                 self._local.db.close()
@@ -515,8 +619,15 @@ class DatabaseManager:
             if hasattr(self._local, 'raw_conn') and self._local.raw_conn is not None:
                 self._local.raw_conn.close()
                 self._local.raw_conn = None
+            
+            # Clear query cache
+            self._query_cache.clear()
+            
+            # Shutdown thread pool
+            if hasattr(self, '_thread_pool'):
+                self._thread_pool.shutdown(wait=False)
                 
-            logger.debug(f"Closed database connections for thread {threading.get_ident()}")
+            logger.debug(f"Closed database connections and cleared cache for thread {threading.get_ident()}")
         except Exception as e:
             logger.error(f"Error closing connections: {e}")
     
@@ -572,21 +683,27 @@ class DatabaseManager:
 
 
 class AsyncDatabaseManager:
-    """Async database manager for improved performance"""
+    """Enhanced async database manager with connection pooling and performance optimization"""
     
-    def __init__(self, db_path: Optional[str] = None):
+    def __init__(self, db_path: Optional[str] = None, pool_size: int = 10):
         self.db_path = db_path or config.get('storage.database_path', 'data/research.db')
+        self.pool_size = pool_size
         
         # Create data directory if it doesn't exist
         Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
         
         # Initialize optimizer
-        self.optimizer = DatabaseOptimizer(self.db_path)
+        self.optimizer = EnhancedDatabaseOptimizer(self.db_path)
         
-        # Connection pool (simple implementation)
+        # Enhanced connection pool with performance optimization
         self._connection_pool = []
-        self._pool_size = 5
         self._pool_lock = asyncio.Lock()
+        self._active_connections = 0
+        self._max_connections = pool_size * 2  # Allow burst capacity
+        
+        # Performance optimization
+        self._query_cache = {}
+        self._cache_ttl = 300  # 5 minutes
         
         # Initialize database schema synchronously first
         self._initialize_tables_sync()
@@ -669,25 +786,44 @@ class AsyncDatabaseManager:
     
     @asynccontextmanager
     async def _get_connection(self):
-        """Get connection from pool or create new one"""
+        """Enhanced connection pooling with performance optimizations"""
         async with self._pool_lock:
+            # Try to get from pool first
             if self._connection_pool:
                 conn = self._connection_pool.pop()
-            else:
+            elif self._active_connections < self._max_connections:
+                # Create new optimized connection
                 conn = await aiosqlite.connect(
                     self.db_path,
-                    timeout=30.0
+                    timeout=30.0,
+                    isolation_level=None
                 )
+                
+                # Apply performance pragmas
+                await conn.execute("PRAGMA journal_mode=WAL")
+                await conn.execute("PRAGMA synchronous=NORMAL")
+                await conn.execute("PRAGMA cache_size=10000")
+                await conn.execute("PRAGMA temp_store=MEMORY")
+                
                 conn.row_factory = aiosqlite.Row
+                self._active_connections += 1
+            else:
+                # Wait for available connection (simple backpressure)
+                await asyncio.sleep(0.01)
+                conn = self._connection_pool.pop() if self._connection_pool else None
+                
+                if conn is None:
+                    raise Exception("Connection pool exhausted")
         
         try:
             yield conn
         finally:
             async with self._pool_lock:
-                if len(self._connection_pool) < self._pool_size:
+                if len(self._connection_pool) < self.pool_size:
                     self._connection_pool.append(conn)
                 else:
                     await conn.close()
+                    self._active_connections -= 1
     
     async def save_papers_async(self, papers: List[Paper]) -> List[str]:
         """Save multiple papers asynchronously"""
