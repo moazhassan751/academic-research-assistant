@@ -9,9 +9,10 @@ from datetime import datetime, timedelta
 from pathlib import Path
 import sys
 import time
+import asyncio
 
 try:
-    from src.crew.research_crew import ResearchCrew
+    from src.crew.research_crew import UltraFastResearchCrew as ResearchCrew
     from src.storage.database import db
     from src.utils.config import config
     from src.utils.logging import setup_logging, logger
@@ -19,6 +20,9 @@ try:
     from src.utils.health_monitor import health_monitor
     from src.utils.error_handler import error_handler
     from src.utils.resource_manager import resource_manager
+    # Enhanced performance optimization imports
+    from src.utils.performance_optimizer import optimizer
+    from src.utils.adaptive_config import get_performance_config, get_adaptive_config
 except ImportError as e:
     print(f"❌ Import Error: {e}")
     print("Make sure you're running from the project root directory and all dependencies are installed.")
@@ -41,7 +45,7 @@ def display_banner():
     console.print(panel)
 
 def display_config_info():
-    """Display current configuration"""
+    """Display current configuration including performance optimizations"""
     try:
         env = config.environment
         llm_config = config.llm_config
@@ -63,6 +67,16 @@ def display_config_info():
         config_table.add_row("CrossRef API", "Enabled" if crossref_config else "Disabled")
         config_table.add_row("ArXiv API", "Enabled")
         
+        # Add performance configuration
+        try:
+            perf_config = get_performance_config()
+            config_table.add_row("⚡ Performance Mode", "Optimized")
+            config_table.add_row("Parallel Workers", str(perf_config.parallel_workers))
+            config_table.add_row("Cache Size", f"{perf_config.max_cache_size_mb}MB")
+            config_table.add_row("Async Processing", "Enabled" if perf_config.enable_async_processing else "Disabled")
+        except Exception as e:
+            config_table.add_row("⚡ Performance Mode", f"Error: {e}")
+        
         console.print(config_table)
         
         # Display rate limits
@@ -72,9 +86,75 @@ def display_config_info():
         console.print(f"  • CrossRef: {rate_limits.get('crossref', 1)} req/sec")
         console.print(f"  • ArXiv: {rate_limits.get('arxiv', 3)}s delay")
         
+        # Display performance info
+        try:
+            system_info = optimizer.get_performance_summary()['system_info']
+            console.print("\n[bold cyan]System Performance:[/bold cyan]")
+            console.print(f"  • CPU Cores: {system_info['cpu_count']}")
+            console.print(f"  • Memory: {system_info['memory_gb']:.1f}GB")
+            console.print(f"  • Optimal Threads: {system_info['optimal_io_threads']}")
+        except Exception as e:
+            console.print(f"\n[yellow]Performance info unavailable: {e}[/yellow]")
+        
     except Exception as e:
         console.print(f"[red]Error displaying config: {e}[/red]")
         logger.error(f"Config display error: {e}", exc_info=True)
+
+def display_performance_summary():
+    """Display current performance statistics and system status"""
+    try:
+        console.print("[cyan]📊 Performance Summary[/cyan]")
+        
+        # Get performance summary
+        perf_summary = optimizer.get_performance_summary()
+        
+        # System info table
+        system_table = Table(title="System Performance Status", show_header=True)
+        system_table.add_column("Metric", style="cyan")
+        system_table.add_column("Value", style="green")
+        system_table.add_column("Status", style="blue")
+        
+        system_info = perf_summary['system_info']
+        system_table.add_row("CPU Cores", str(system_info['cpu_count']), "✅ Optimal")
+        system_table.add_row("Memory", f"{system_info['memory_gb']:.1f}GB", "✅ Available")
+        system_table.add_row("IO Threads", str(system_info['optimal_io_threads']), "⚡ Optimized")
+        
+        memory_percent = system_info.get('current_memory_percent', 0)
+        memory_status = "🔥 High" if memory_percent > 85 else "⚠️ Medium" if memory_percent > 70 else "✅ Good"
+        system_table.add_row("Memory Usage", f"{memory_percent:.1f}%", memory_status)
+        
+        console.print(system_table)
+        
+        # Cache performance
+        cache_stats = perf_summary['cache_stats']
+        if cache_stats.get('smart_cache'):
+            cache_table = Table(title="Cache Performance", show_header=True)
+            cache_table.add_column("Cache Type", style="cyan") 
+            cache_table.add_column("Hit Rate", style="green")
+            cache_table.add_column("Memory Usage", style="blue")
+            
+            smart_cache = cache_stats['smart_cache']
+            hit_rate = smart_cache.get('hit_rate', 0) * 100
+            cache_table.add_row("Smart Cache", f"{hit_rate:.1f}%", f"{smart_cache.get('memory_mb', 0):.1f}MB")
+            
+            console.print(cache_table)
+        
+        # Recent performance metrics
+        if perf_summary['recent_metrics']:
+            console.print("\n[cyan]Recent Performance Metrics:[/cyan]")
+            for operation, metrics in list(perf_summary['recent_metrics'].items())[:5]:
+                console.print(f"  • {operation}: {metrics['execution_time']:.2f}s, {metrics['memory_usage']:.1f}MB")
+        
+        # Recommendations
+        if perf_summary.get('recommendations'):
+            console.print("\n[yellow]Performance Recommendations:[/yellow]")
+            for rec_key, rec_value in perf_summary['recommendations'].items():
+                if rec_value:
+                    console.print(f"  • {rec_key.replace('_', ' ').title()}")
+        
+    except Exception as e:
+        console.print(f"[red]Error displaying performance summary: {e}[/red]")
+        logger.error(f"Performance summary error: {e}", exc_info=True)
 
 @click.group()
 @click.option('--verbose', '-v', is_flag=True, help='Enable verbose logging')
@@ -89,6 +169,11 @@ def cli(ctx, verbose):
     
     # Display banner
     display_banner()
+
+@cli.command()
+def performance():
+    """Display performance statistics and optimization status"""
+    display_performance_summary()
 
 @cli.command()
 def config_info():
@@ -270,6 +355,76 @@ def test_apis():
         logger.error(f"API test error: {e}", exc_info=True)
 
 @cli.command()
+def performance():
+    """Display performance statistics and run optimization tests"""
+    try:
+        console.print("[cyan]⚡ Performance Analysis[/cyan]")
+        
+        # Display system information
+        system_info = optimizer.get_performance_summary()['system_info']
+        console.print(f"\n[bold cyan]System Configuration:[/bold cyan]")
+        console.print(f"  • CPU Cores: {system_info['cpu_count']}")
+        console.print(f"  • Memory: {system_info['memory_gb']:.1f}GB")
+        console.print(f"  • Optimal I/O Threads: {system_info['optimal_io_threads']}")
+        console.print(f"  • Optimal CPU Threads: {system_info['optimal_cpu_threads']}")
+        
+        # Display performance configuration
+        perf_config = get_performance_config()
+        console.print(f"\n[bold cyan]Performance Settings:[/bold cyan]")
+        console.print(f"  • Parallel Workers: {perf_config.parallel_workers}")
+        console.print(f"  • Max Papers Context: {perf_config.max_papers_context}")
+        console.print(f"  • Cache Size: {perf_config.max_cache_size_mb}MB")
+        console.print(f"  • DB Cache: {perf_config.db_cache_size_mb}MB")
+        console.print(f"  • Async Processing: {perf_config.enable_async_processing}")
+        console.print(f"  • Semantic Search: {perf_config.enable_semantic_search}")
+        console.print(f"  • Caching: {perf_config.enable_caching}")
+        
+        # Memory pressure check
+        is_pressure, memory_percent, _ = optimizer.memory_pressure_check()
+        console.print(f"\n[bold cyan]System Status:[/bold cyan]")
+        console.print(f"  • Memory Usage: {memory_percent:.1f}%")
+        status_color = "red" if is_pressure else "green"
+        status_text = "Under Pressure" if is_pressure else "Normal"
+        console.print(f"  • Memory Status: [{status_color}]{status_text}[/{status_color}]")
+        
+        # Performance recommendations
+        config_manager = get_adaptive_config()
+        recommendations = config_manager.get_recommendations()
+        if recommendations:
+            console.print(f"\n[bold cyan]Recommendations:[/bold cyan]")
+            for i, rec in enumerate(recommendations, 1):
+                console.print(f"  {i}. {rec}")
+        
+        # Quick benchmark
+        console.print(f"\n[cyan]Running quick performance test...[/cyan]")
+        
+        # Test configuration loading time
+        start_time = time.perf_counter()
+        test_config = get_performance_config()
+        config_time = time.perf_counter() - start_time
+        
+        # Test database connection
+        start_time = time.perf_counter()
+        stats = db.get_stats()
+        db_time = time.perf_counter() - start_time
+        
+        console.print(f"\n[bold cyan]Benchmark Results:[/bold cyan]")
+        console.print(f"  • Config Load Time: {config_time*1000:.1f}ms")
+        console.print(f"  • Database Query Time: {db_time*1000:.1f}ms")
+        console.print(f"  • Papers in Database: {stats.get('papers', 0)}")
+        
+        if config_time > 0.1:
+            console.print("[yellow]  ⚠️  Config loading is slow - consider restarting application[/yellow]")
+        
+        if db_time > 0.5:
+            console.print("[yellow]  ⚠️  Database queries are slow - consider running database optimization[/yellow]")
+            console.print("     Run: python main.py optimize-db")
+        
+    except Exception as e:
+        console.print(f"[red]❌ Performance analysis error: {e}[/red]")
+        logger.error(f"Performance analysis error: {e}", exc_info=True)
+
+@cli.command()
 def stats():
     """Display database statistics"""
     try:
@@ -310,8 +465,14 @@ def stats():
               type=click.Choice(['markdown', 'pdf', 'docx', 'latex', 'html', 'txt', 'csv', 'json']),
               default=['markdown', 'txt'],
               help='Export formats for drafts and bibliographies (can specify multiple)')
-def research(topic, aspects, max_papers, paper_type, recent_only, output_dir, save_results, export_formats):
+@click.option('--optimized', is_flag=True, help='Use performance-optimized research processing')
+def research(topic, aspects, max_papers, paper_type, recent_only, output_dir, save_results, export_formats, optimized):
     """Conduct comprehensive research on a topic"""
+    
+    # Performance setup
+    start_time = time.perf_counter()
+    if optimized:
+        console.print("[green]⚡ Performance optimization enabled for research[/green]")
     
     # Validate inputs
     if not topic.strip():
@@ -324,15 +485,22 @@ def research(topic, aspects, max_papers, paper_type, recent_only, output_dir, sa
     
     if max_papers > 200:
         console.print("[yellow]⚠️ Warning: Large number of papers may take significant time[/yellow]")
-        console.print(f"[dim]Estimated time: {max_papers * 2} seconds (based on API rate limits)[/dim]")
+        time_estimate = max_papers * 2 if not optimized else max_papers * 0.8  # Optimized processing is faster
+        console.print(f"[dim]Estimated time: {time_estimate:.0f} seconds {'(optimized)' if optimized else '(standard)'}[/dim]")
         if not Confirm.ask("Continue anyway?"):
             return
     
     if max_papers < 5:
         console.print("[yellow]⚠️ Warning: Very few papers requested, results may be limited[/yellow]")
     
+    # Initialize research crew with optimization
+    if optimized:
+        with optimizer.measure_performance('crew_initialization'):
+            crew = ResearchCrew()
+    else:
+        crew = ResearchCrew()
+    
     # Validate export formats
-    crew = ResearchCrew()
     available_formats = crew.get_available_export_formats()
     invalid_formats = [fmt for fmt in export_formats if fmt not in available_formats]
     
@@ -370,7 +538,8 @@ def research(topic, aspects, max_papers, paper_type, recent_only, output_dir, sa
         f"[bold]Recent Only:[/bold] {'Yes' if recent_only else 'No'}\n"
         f"[bold]Save Results:[/bold] {'Yes' if save_results else 'No'}\n"
         f"[bold]Export Formats:[/bold] {', '.join(export_formats)}\n"
-        f"[bold]Output Directory:[/bold] {output_dir or 'Default'}",
+        f"[bold]Output Directory:[/bold] {output_dir or 'Default'}\n"
+        f"[bold]Performance Optimization:[/bold] {'Enabled' if optimized else 'Standard'}",
         title="Research Parameters",
         border_style="green"
     ))
@@ -380,64 +549,118 @@ def research(topic, aspects, max_papers, paper_type, recent_only, output_dir, sa
         return
     
     try:
-        # Initialize research crew
-        console.print("[cyan]🚀 Initializing research crew with OpenAlex & CrossRef...[/cyan]")
-        crew = ResearchCrew()
+        # Auto-tune optimizer for research workload
+        optimizer.auto_tune_for_workload('api_heavy', max_papers)
         
-        # Execute research with progress tracking
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            BarColumn(),
-            TimeElapsedColumn(),
-            console=console,
-            transient=False
-        ) as progress:
+        # Execute research with performance optimization
+        if optimized:
+            console.print("[cyan]🚀 Initializing ultra-fast research crew with advanced optimizations...[/cyan]")
+            with optimizer.measure_performance('optimized_research_execution'):
+                # Execute the research workflow
+                with Progress(
+                    SpinnerColumn(),
+                    TextColumn("[progress.description]{task.description}"),
+                    BarColumn(),
+                    TimeElapsedColumn(),
+                    console=console,
+                    transient=False
+                ) as progress:
+                    
+                    # Overall progress
+                    overall_task = progress.add_task("Ultra-Fast Research Progress", total=5)
+                    
+                    progress.update(overall_task, description="🚀 Starting ultra-optimized research workflow...")
+                    
+                    # Execute the research workflow with progress callback
+                    results = crew.execute_research_workflow(
+                        research_topic=topic,
+                        specific_aspects=aspects_list,
+                        max_papers=max_papers,
+                        paper_type=paper_type,
+                        date_from=date_from,
+                        progress_callback=lambda step, desc: progress.update(
+                            overall_task, 
+                            advance=1, 
+                            description=f"⚡ {desc}"
+                        )
+                    )
+                    
+                    progress.update(overall_task, description="✅ Ultra-fast research completed!")
+        else:
+            console.print("[cyan]🚀 Initializing enhanced research crew with performance optimizations...[/cyan]")
             
-            # Overall progress
-            overall_task = progress.add_task("Research Progress", total=5)
-            
-            progress.update(overall_task, description="Starting research workflow...")
-            
-            # Execute the research workflow with progress callback
-            results = crew.execute_research_workflow(
-                research_topic=topic,
-                specific_aspects=aspects_list,
-                max_papers=max_papers,
-                paper_type=paper_type,
-                date_from=date_from,
-                progress_callback=lambda step, desc: progress.update(
-                    overall_task, 
-                    advance=1, 
-                    description=f"📊 {desc}"
-                )
-            )
-            
-            progress.update(overall_task, description="✅ Research completed!")
-            
-            if not results.get('success'):
-                error_msg = results.get('error', 'Unknown error occurred')
-                console.print(f"[red]❌ Research failed: {error_msg}[/red]")
-                return
-            
-            # Display results summary
-            display_research_results(results)
-            
-            # Save results if requested
-            if save_results:
-                console.print("\n[cyan]💾 Saving results...[/cyan]")
-                output_path = crew.save_results(results, output_dir, list(export_formats))
-                console.print(f"[green]✅ Results saved to: {output_path}[/green]")
-                console.print(f"[blue]📄 Export formats: {', '.join(export_formats)}[/blue]")
+            # Execute research with progress tracking
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                BarColumn(),
+                TimeElapsedColumn(),
+                console=console,
+                transient=False
+            ) as progress:
                 
-                # Show saved files
-                if Path(output_path).exists():
-                    files = list(Path(output_path).iterdir())
-                    console.print(f"[blue]📁 Generated {len(files)} files:[/blue]")
-                    for file in files[:5]:  # Show first 5 files
-                        console.print(f"   - {file.name}")
-                    if len(files) > 5:
-                        console.print(f"   ... and {len(files) - 5} more files")
+                # Overall progress
+                overall_task = progress.add_task("Enhanced Research Progress", total=5)
+                
+                progress.update(overall_task, description="Starting research workflow...")
+                
+                # Execute the research workflow with progress callback
+                results = crew.execute_research_workflow(
+                    research_topic=topic,
+                    specific_aspects=aspects_list,
+                    max_papers=max_papers,
+                    paper_type=paper_type,
+                    date_from=date_from,
+                    progress_callback=lambda step, desc: progress.update(
+                        overall_task, 
+                        advance=1, 
+                        description=f"📊 {desc}"
+                    )
+                )
+                
+                progress.update(overall_task, description="✅ Research completed!")
+        
+        # Calculate total processing time
+        total_time = time.perf_counter() - start_time
+        
+        if not results.get('success'):
+            error_msg = results.get('error', 'Unknown error occurred')
+            console.print(f"[red]❌ Research failed: {error_msg}[/red]")
+            return
+        
+        # Display results summary with performance metrics
+        display_research_results(results)
+        
+        # Show performance information
+        perf_panel_content = f"⏱️ Total Time: {total_time:.2f}s\n"
+        if optimized:
+            perf_panel_content += "⚡ Optimization: [green]ENABLED[/green]\n"
+            if hasattr(optimizer, 'get_performance_metrics'):
+                metrics = optimizer.get_performance_metrics()
+                if metrics:
+                    perf_panel_content += f"🚀 Operations: {metrics.get('operations_count', 0)}\n"
+                    if 'average_speedup' in metrics:
+                        perf_panel_content += f"📈 Avg Speedup: {metrics['average_speedup']:.1f}x"
+        else:
+            perf_panel_content += "📊 Mode: Standard Processing"
+        
+        console.print(Panel(perf_panel_content, title="📊 Performance Summary", border_style="cyan"))
+        
+        # Save results if requested
+        if save_results:
+            console.print("\n[cyan]💾 Saving results...[/cyan]")
+            output_path = crew.save_results(results, output_dir, list(export_formats))
+            console.print(f"[green]✅ Results saved to: {output_path}[/green]")
+            console.print(f"[blue]📄 Export formats: {', '.join(export_formats)}[/blue]")
+            
+            # Show saved files
+            if Path(output_path).exists():
+                files = list(Path(output_path).iterdir())
+                console.print(f"[blue]📁 Generated {len(files)} files:[/blue]")
+                for file in files[:5]:  # Show first 5 files
+                    console.print(f"   - {file.name}")
+                if len(files) > 5:
+                    console.print(f"   ... and {len(files) - 5} more files")
             
     except KeyboardInterrupt:
         console.print("\n[yellow]⏹️ Research interrupted by user[/yellow]")
@@ -821,23 +1044,37 @@ def export(result_dir, export_formats):
         logger.error(f"Export error: {e}", exc_info=True)
 
 @cli.command()
-def interactive():
+@click.option('--optimized', is_flag=True, help='Enable performance optimization for interactive session')
+def interactive(optimized):
     """Start interactive research session"""
-    console.print("[bold green]🚀 Interactive Research Session Started[/bold green]")
+    
+    if optimized:
+        console.print("[bold green]🚀 Optimized Interactive Research Session Started[/bold green]")
+        console.print("[green]⚡ Performance optimization enabled[/green]")
+    else:
+        console.print("[bold green]🚀 Interactive Research Session Started[/bold green]")
+    
     console.print("Type 'help' for available commands or 'exit' to quit.\n")
     
     crew = None
+    session_start = time.perf_counter()
     
     while True:
         try:
             command = Prompt.ask("\n[cyan]research>[/cyan]", default="help")
             
             if command.lower() in ['exit', 'quit', 'q']:
+                # Show session summary
+                session_time = time.perf_counter() - session_start
+                console.print(f"\n[yellow]📊 Session Summary:[/yellow]")
+                console.print(f"⏱️ Total session time: {session_time:.1f}s")
+                if optimized:
+                    console.print("⚡ Performance optimization: [green]ENABLED[/green]")
                 console.print("[yellow]👋 Goodbye![/yellow]")
                 break
             
             elif command.lower() == 'help':
-                console.print("""
+                help_text = """
 [bold cyan]Available Commands:[/bold cyan]
 - [green]research <topic>[/green] - Start research on a topic
 - [green]ask <question>[/green] - Ask a question about papers in database
@@ -853,19 +1090,12 @@ def interactive():
 [bold cyan]Examples:[/bold cyan]
 - research machine learning in healthcare
 - ask What are the recent trends in transformer architectures?
-- search neural networks
-- themes
-
-[bold cyan]Q&A Features:[/bold cyan]
-- Ask questions about papers you've collected
-- Get AI-powered answers with source citations
-- Interactive sessions for multiple related questions
-
-[bold cyan]CLI Commands for Advanced Features:[/bold cyan]
-- [yellow]python main.py ask "your question" --topic "filter topic"[/yellow]
-- [yellow]python main.py qa-session --topic "focus topic"[/yellow]
-- [yellow]python main.py research "topic" --export-formats pdf docx[/yellow]
-""")
+- search neural networks"""
+                
+                if optimized:
+                    help_text += "\n\n[yellow]⚡ Performance Optimization: [green]ACTIVE[/green] - Enhanced speed for all operations[/yellow]"
+                
+                console.print(help_text)
             
             elif command.lower() == 'formats':
                 try:
@@ -949,24 +1179,36 @@ def interactive():
                 question = command[4:].strip()
                 if question and len(question) >= 10:
                     if not crew:
-                        console.print("[cyan]🤖 Initializing QA system...[/cyan]")
-                        crew = ResearchCrew()
+                        if optimized:
+                            console.print("[cyan]🤖 Initializing optimized QA system...[/cyan]")
+                            with optimizer.measure_performance('crew_init_interactive'):
+                                crew = ResearchCrew()
+                        else:
+                            console.print("[cyan]🤖 Initializing QA system...[/cyan]")
+                            crew = ResearchCrew()
                     
                     try:
                         console.print(f"[cyan]🔍 Analyzing papers for: {question}[/cyan]")
-                        result = crew.answer_research_question(question, paper_limit=10)
+                        
+                        if optimized:
+                            with optimizer.measure_performance('qa_interactive'):
+                                result = crew.answer_research_question(question, paper_limit=10)
+                        else:
+                            result = crew.answer_research_question(question, paper_limit=10)
                         
                         answer = result.get('answer', 'No answer available')
                         confidence = result.get('confidence', 0.0)
                         paper_count = result.get('paper_count', 0)
                         
-                        # Display result
-                        if confidence >= 0.5:
-                            console.print(f"[green]🎯 Answer (Confidence: {confidence:.2f}, Papers: {paper_count}):[/green]")
-                        else:
-                            console.print(f"[yellow]🤔 Answer (Confidence: {confidence:.2f}, Papers: {paper_count}):[/yellow]")
+                        # Display result with performance info
+                        confidence_color = "green" if confidence >= 0.5 else "yellow"
+                        status_icon = "🎯" if confidence >= 0.5 else "🤔"
                         
-                        console.print(Panel(answer, border_style="green" if confidence >= 0.5 else "yellow"))
+                        console.print(f"[{confidence_color}]{status_icon} Answer (Confidence: {confidence:.2f}, Papers: {paper_count}):[/{confidence_color}]")
+                        if optimized:
+                            console.print("[green]⚡ Optimized processing[/green]")
+                        
+                        console.print(Panel(answer, border_style=confidence_color))
                         
                         # Show follow-ups
                         follow_ups = result.get('follow_up_questions', [])
@@ -997,7 +1239,10 @@ def interactive():
 @click.option('--topic', '-t', help='Filter papers by research topic')
 @click.option('--limit', '-l', default=10, help='Maximum number of papers to consider')
 @click.option('--save-result', '-s', is_flag=True, help='Save the QA result to file')
-def ask(question, topic, limit, save_result):
+@click.option('--enhanced', '-e', is_flag=True, help='Use Enhanced QA Agent (if available)')
+@click.option('--standard', is_flag=True, help='Force use of Standard QA Agent')
+@click.option('--optimized', '-o', is_flag=True, help='Use performance-optimized processing')
+def ask(question, topic, limit, save_result, enhanced, standard, optimized):
     """Ask a research question and get an answer based on papers in the database"""
     
     if not question.strip():
@@ -1009,10 +1254,16 @@ def ask(question, topic, limit, save_result):
         return
     
     try:
+        # Performance optimization setup
+        if optimized:
+            console.print("[green]⚡ Performance optimization enabled[/green]")
+        
         console.print(Panel(
             f"[bold]Question:[/bold] {question}\n"
             f"[bold]Topic Filter:[/bold] {topic or 'None (search all papers)'}\n"
             f"[bold]Paper Limit:[/bold] {limit}\n"
+            f"[bold]QA Mode:[/bold] {'Enhanced' if enhanced else ('Standard' if standard else 'Auto')}\n"
+            f"[bold]Optimized:[/bold] {'Yes' if optimized else 'No'}\n"
             f"[bold]Save Result:[/bold] {'Yes' if save_result else 'No'}",
             title="Question Answering Parameters",
             border_style="blue"
@@ -1020,15 +1271,59 @@ def ask(question, topic, limit, save_result):
         
         # Initialize research crew
         console.print("[cyan]🤖 Initializing QA system...[/cyan]")
-        crew = ResearchCrew()
         
-        # Answer the question with progress indication
-        with console.status("🔍 Analyzing papers and generating answer..."):
-            result = crew.answer_research_question(
-                question=question,
-                research_topic=topic,
-                paper_limit=limit
-            )
+        # Use optimized processing if requested
+        if optimized:
+            with optimizer.measure_performance('qa_initialization'):
+                crew = ResearchCrew()
+        else:
+            crew = ResearchCrew()
+        
+        # Determine QA mode
+        use_enhanced = None
+        if enhanced and standard:
+            console.print("[yellow]⚠️  Both enhanced and standard flags specified. Using enhanced.[/yellow]")
+            use_enhanced = True
+        elif enhanced:
+            use_enhanced = True
+        elif standard:
+            use_enhanced = False
+        # If neither flag is specified, let the crew decide based on config
+        
+        # Show QA agent status
+        qa_status = crew.get_qa_agent_status()
+        if qa_status.get('enhanced_qa_available'):
+            mode_text = "Enhanced QA" if (use_enhanced if use_enhanced is not None else qa_status.get('currently_using_enhanced')) else "Standard QA"
+            console.print(f"[green]✅ Using {mode_text} Agent[/green]")
+            if optimized:
+                console.print("[green]✅ Performance optimizations active[/green]")
+        else:
+            console.print("[yellow]⚠️  Enhanced QA not available, using Standard QA[/yellow]")
+            if enhanced:
+                console.print("[dim]💡 To enable Enhanced QA, run: install_enhanced_qa_deps.bat[/dim]")
+        
+        # Answer the question with progress indication and performance tracking
+        start_time = time.perf_counter()
+        
+        if optimized:
+            with optimizer.measure_performance('qa_processing'):
+                with console.status("� Analyzing papers with optimization..."):
+                    result = crew.answer_research_question(
+                        question=question,
+                        research_topic=topic,
+                        paper_limit=limit,
+                        use_enhanced=use_enhanced
+                    )
+        else:
+            with console.status("�🔍 Analyzing papers and generating answer..."):
+                result = crew.answer_research_question(
+                    question=question,
+                    research_topic=topic,
+                    paper_limit=limit,
+                    use_enhanced=use_enhanced
+                )
+        
+        processing_time = time.perf_counter() - start_time
         
         # Display the result
         if result.get('error'):
@@ -1089,9 +1384,22 @@ def ask(question, topic, limit, save_result):
             for i, fq in enumerate(follow_ups, 1):
                 console.print(f"   {i}. {fq}")
         
-        # Performance info
-        execution_time = result.get('execution_time', 'Unknown')
-        console.print(f"\n[dim]⏱️ Answered in {execution_time}[/dim]")
+        # Performance and timing info
+        execution_time = result.get('execution_time', f'{processing_time:.2f}s')
+        
+        # Create performance panel
+        perf_info = f"⏱️ Answered in {execution_time}"
+        if optimized:
+            perf_info += f"\n⚡ Performance optimization: [green]ENABLED[/green]"
+            # Show optimization metrics if available
+            if hasattr(optimizer, 'get_performance_metrics'):
+                metrics = optimizer.get_performance_metrics()
+                if metrics:
+                    perf_info += f"\n🚀 Total optimized operations: {metrics.get('operations_count', 0)}"
+                    if 'average_speedup' in metrics:
+                        perf_info += f"\n📈 Average speedup: {metrics['average_speedup']:.1f}x"
+        
+        console.print(Panel(perf_info, title="📊 Performance Metrics", border_style="cyan"))
         
         # Save result if requested
         if save_result:
@@ -1306,6 +1614,99 @@ def qa_session(topic, save_session):
     except Exception as e:
         console.print(f"[red]❌ Error in QA session: {e}[/red]")
         logger.error(f"QA session error: {e}", exc_info=True)
+
+@cli.command()
+@click.option('--enable/--disable', default=None, help='Enable or disable Enhanced QA')
+@click.option('--status', is_flag=True, help='Show QA agent status')
+@click.option('--metrics', is_flag=True, help='Show performance metrics')
+@click.option('--clear-cache', is_flag=True, help='Clear QA agent caches')
+def qa_config(enable, disable, status, metrics, clear_cache):
+    """Configure and manage QA agents"""
+    
+    try:
+        # Initialize research crew
+        crew = ResearchCrew()
+        
+        if status:
+            # Show status
+            console.print("[bold blue]📊 QA Agent Status[/bold blue]")
+            qa_status = crew.get_qa_agent_status()
+            
+            status_table = Table(show_header=True)
+            status_table.add_column("Feature", style="cyan", width=25)
+            status_table.add_column("Status", style="green", width=15)
+            
+            status_table.add_row("Standard QA Available", "✅" if qa_status['standard_qa_available'] else "❌")
+            status_table.add_row("Enhanced QA Available", "✅" if qa_status['enhanced_qa_available'] else "❌") 
+            status_table.add_row("Currently Using Enhanced", "✅" if qa_status['currently_using_enhanced'] else "❌")
+            
+            # Enhanced features
+            if qa_status['enhanced_qa_available']:
+                status_table.add_row("", "")  # Separator
+                status_table.add_row("[bold]Enhanced Features:", "")
+                for feature, enabled in qa_status['enhanced_qa_features'].items():
+                    status_table.add_row(f"  {feature.replace('_', ' ').title()}", "✅" if enabled else "❌")
+            
+            console.print(status_table)
+            
+        if metrics:
+            # Show performance metrics
+            console.print("\n[bold blue]📈 Performance Metrics[/bold blue]")
+            perf_metrics = crew.get_qa_performance_metrics()
+            
+            if perf_metrics.get('enhanced_qa_metrics') and isinstance(perf_metrics['enhanced_qa_metrics'], dict):
+                enh_metrics = perf_metrics['enhanced_qa_metrics']
+                
+                metrics_table = Table(show_header=True)
+                metrics_table.add_column("Metric", style="cyan", width=25)
+                metrics_table.add_column("Value", style="green", width=15)
+                
+                if 'total_questions' in enh_metrics:
+                    metrics_table.add_row("Total Questions Processed", str(enh_metrics['total_questions']))
+                if 'cache_hits' in enh_metrics:
+                    metrics_table.add_row("Cache Hits", str(enh_metrics['cache_hits']))
+                if 'average_response_time' in enh_metrics:
+                    metrics_table.add_row("Average Response Time", f"{enh_metrics['average_response_time']:.2f}s")
+                if 'cache_size' in enh_metrics:
+                    metrics_table.add_row("Cache Size", str(enh_metrics['cache_size']))
+                
+                console.print(metrics_table)
+            else:
+                console.print("[yellow]Enhanced QA metrics not available[/yellow]")
+                console.print(f"[dim]Standard QA metrics: {perf_metrics.get('standard_qa_metrics', 'Not available')}[/dim]")
+        
+        if enable is not None:
+            # Toggle enhanced QA
+            success = crew.toggle_enhanced_qa(enable)
+            if success:
+                mode = "Enhanced" if enable else "Standard"
+                console.print(f"[green]✅ QA mode set to: {mode}[/green]")
+            else:
+                console.print("[red]❌ Failed to change QA mode[/red]")
+                if enable:
+                    console.print("[dim]💡 Install enhanced dependencies with: install_enhanced_qa_deps.bat[/dim]")
+        
+        if clear_cache:
+            # Clear caches
+            console.print("[cyan]🧹 Clearing QA agent caches...[/cyan]")
+            cache_results = crew.clear_qa_cache()
+            
+            for cache_type, cleared in cache_results.items():
+                status_icon = "✅" if cleared else "❌"
+                cache_name = cache_type.replace('_', ' ').title()
+                console.print(f"{status_icon} {cache_name}")
+        
+        # If no specific action requested, show status by default
+        if not any([status, metrics, enable is not None, clear_cache]):
+            console.print("[dim]💡 Use --status to see QA agent status[/dim]")
+            console.print("[dim]💡 Use --enable/--disable to toggle Enhanced QA[/dim]")
+            console.print("[dim]💡 Use --metrics to see performance metrics[/dim]")
+            console.print("[dim]💡 Use --clear-cache to clear caches[/dim]")
+            
+    except Exception as e:
+        console.print(f"[red]❌ Error managing QA configuration: {e}[/red]")
+        logger.error(f"QA config error: {e}", exc_info=True)
+
 
 if __name__ == '__main__':
     cli()
