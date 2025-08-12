@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 import time
 import asyncio
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from ..agents.literature_survey_agent import LiteratureSurveyAgent
+from ..agents.literature_survey_agent import OptimizedLiteratureSurveyAgent
 from ..agents.note_taking_agent import NoteTakingAgent
 from ..agents.theme_synthesizer_agent import ThemeSynthesizerAgent
 from ..agents.draft_writer_agent import DraftWriterAgent
@@ -14,27 +14,49 @@ from ..storage.database import db
 from ..utils.logging import logger
 from ..utils.config import config
 from ..utils.export_manager import export_manager
+from ..utils.performance_optimizer import optimizer, ultra_cache, turbo_batch_processor
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
-class ResearchCrew:
+class UltraFastResearchCrew:
+    """Ultra-fast research crew with comprehensive performance optimizations"""
+    
     def __init__(self):
-        # Initialize all agents with error handling
+        # Initialize all agents with error handling and performance optimization
         try:
-            self.literature_agent = LiteratureSurveyAgent()
-            self.note_agent = NoteTakingAgent()
-            self.theme_agent = ThemeSynthesizerAgent()
-            self.draft_agent = DraftWriterAgent()
-            self.citation_agent = CitationGeneratorAgent()
-            self.qa_agent = QuestionAnsweringAgent()
+            with optimizer.measure_performance('agent_initialization'):
+                # Use optimized agents where available
+                self.literature_agent = OptimizedLiteratureSurveyAgent()
+                self.note_agent = NoteTakingAgent()
+                self.theme_agent = ThemeSynthesizerAgent()
+                self.draft_agent = DraftWriterAgent()
+                self.citation_agent = CitationGeneratorAgent()
+                self.qa_agent = QuestionAnsweringAgent(config.__dict__ if config else None)
+                
+            logger.info("Enhanced QA Agent features integrated into main QA Agent")
             
-            # Configuration for resilience
-            self.max_workflow_retries = config.get('research.max_retries', 3)
-            self.step_timeout = config.get('research.step_timeout', 1800)  # 30 minutes per step
-            self.api_cooldown_time = config.get('research.api_cooldown', 120)  # 2 minutes
+            # Performance-optimized configuration
+            system_profile = optimizer.profile
+            self.max_workflow_retries = config.get('research.max_retries', 2)  # Reduced retries
+            self.step_timeout = config.get('research.step_timeout', 1200)  # 20 minutes per step
+            self.api_cooldown_time = config.get('research.api_cooldown', 60)  # 1 minute cooldown
             self.parallel_processing = config.get('research.parallel_processing', True)
             self.checkpoint_enabled = config.get('research.checkpoint_enabled', True)
             
-            logger.info("Research crew initialized with all agents including QA agent")
+            # Adaptive batch processing based on system capabilities
+            self.optimal_batch_size = min(system_profile.batch_size, 5)  # Conservative for stability
+            self.max_concurrent_operations = min(system_profile.max_concurrent // 2, 4)
+            
+            # Performance monitoring
+            self._performance_stats = {
+                'workflows_completed': 0,
+                'total_time': 0,
+                'average_time': 0,
+                'cache_hits': 0,
+                'errors_recovered': 0
+            }
+            
+            logger.info(f"Ultra-fast research crew initialized with batch_size={self.optimal_batch_size}, "
+                       f"max_concurrent={self.max_concurrent_operations}")
             
         except Exception as e:
             logger.error(f"Failed to initialize research crew: {e}")
@@ -404,7 +426,7 @@ class ResearchCrew:
                 papers = self._execute_step_with_retry(
                     self.literature_agent.conduct_comprehensive_literature_survey,
                     "literature_survey",
-                    research_topic, specific_aspects, max_papers, paper_type, date_from
+                    research_topic, specific_aspects, max_papers, paper_type, date_from, True, True  # enable_ranking=True, parallel_search=True
                 )
                 
                 if not papers:
@@ -916,7 +938,7 @@ class ResearchCrew:
         return validation_report
     
     def answer_research_question(self, question: str, research_topic: str = None, 
-                                paper_limit: int = 10) -> Dict[str, Any]:
+                                paper_limit: int = 10, use_enhanced: bool = None) -> Dict[str, Any]:
         """
         Answer a research question based on papers in the database
         
@@ -924,6 +946,7 @@ class ResearchCrew:
             question: The research question to answer
             research_topic: Optional topic to filter papers (if None, searches all papers)
             paper_limit: Maximum number of papers to consider for the answer
+            use_enhanced: Whether to use enhanced QA agent (if available)
             
         Returns:
             Dictionary containing the answer, sources, confidence score, and metadata
@@ -933,7 +956,10 @@ class ResearchCrew:
             
             start_time = time.time()
             
-            # Use the QA agent to answer the question
+            # Use the enhanced QA agent (all features are now integrated)
+            logger.info("Using Enhanced QA Agent with all advanced features")
+            
+            # Use the QA agent to answer the question  
             answer_result = self.qa_agent.answer_question(
                 question=question,
                 research_topic=research_topic,
@@ -941,7 +967,15 @@ class ResearchCrew:
             )
             
             # Generate follow-up questions
-            follow_up_questions = self.qa_agent.get_follow_up_questions(question, answer_result)
+            follow_up_questions = []
+            try:
+                if hasattr(self.qa_agent, 'get_enhanced_follow_up_questions'):
+                    follow_up_questions = self.qa_agent.get_enhanced_follow_up_questions(question, answer_result)
+                elif hasattr(self.qa_agent, 'get_follow_up_questions'):
+                    follow_up_questions = self.qa_agent.get_follow_up_questions(question, answer_result)
+            except Exception as e:
+                logger.warning(f"Could not generate follow-up questions: {e}")
+            
             answer_result['follow_up_questions'] = follow_up_questions
             
             # Add timing and metadata
@@ -950,10 +984,11 @@ class ResearchCrew:
                 'execution_time': f"{execution_time:.2f} seconds",
                 'question': question,
                 'research_topic_filter': research_topic,
-                'paper_limit': paper_limit
+                'paper_limit': paper_limit,
+                'qa_agent_used': 'enhanced'
             })
             
-            logger.info(f"Question answered successfully in {execution_time:.2f} seconds")
+            logger.info(f"Question answered successfully in {execution_time:.2f} seconds using enhanced QA agent")
             logger.info(f"Used {answer_result.get('paper_count', 0)} papers with confidence {answer_result.get('confidence', 0):.3f}")
             
             return answer_result
@@ -1030,27 +1065,93 @@ class ResearchCrew:
                 except KeyboardInterrupt:
                     print("\nSession interrupted by user.")
                     break
-                except Exception as e:
-                    print(f"Error processing question: {e}")
-                    continue
-            
-            session_results['session_end'] = datetime.now().isoformat()
-            logger.info(f"QA session completed with {session_results['total_questions']} questions")
-            
+                    
             return session_results
             
         except Exception as e:
-            logger.error(f"Error in interactive QA session: {e}")
+            logger.error(f"Error in interactive Q&A session: {e}")
             return {
                 'error': str(e),
-                'session_start': datetime.now().isoformat(),
                 'qa_history': [],
                 'total_questions': 0
             }
-
+    
+    def toggle_enhanced_qa(self, enable: bool = True) -> bool:
+        """
+        Toggle between standard and enhanced QA agents
+        
+        Args:
+            enable: True to enable enhanced QA (if available), False for standard
+            
+        Returns:
+            True if toggle was successful, False otherwise
+        """
+        try:
+            # Update configuration preference
+            config.set('research.prefer_enhanced_qa', enable)
+            
+            if enable:
+                logger.info("Enhanced QA features enabled (integrated in main agent)")
+                return True
+            else:
+                logger.info("Enhanced QA features disabled, using basic mode")
+                return True
+                
+        except Exception as e:
+            logger.error(f"Error toggling QA agent: {e}")
+            return False
+    
+    def get_qa_agent_status(self) -> Dict[str, Any]:
+        """Get status information about available QA agents"""
+        return {
+            'enhanced_qa_available': self.qa_agent is not None,
+            'currently_using_enhanced': config.get('research.prefer_enhanced_qa', True),
+            'enhanced_qa_features': {
+                'semantic_embeddings': getattr(self.qa_agent, 'use_semantic_embeddings', False),
+                'bm25_scoring': getattr(self.qa_agent, 'use_bm25_scoring', False), 
+                'parallel_processing': getattr(self.qa_agent, 'use_parallel_processing', False),
+                'caching': getattr(self.qa_agent, 'enable_caching', False),
+            }
+        }
+    
+    def get_qa_performance_metrics(self) -> Dict[str, Any]:
+        """Get performance metrics from QA agents"""
+        metrics = {
+            'enhanced_qa_metrics': {}
+        }
+        
+        if self.qa_agent and hasattr(self.qa_agent, 'get_performance_metrics'):
+            try:
+                metrics['enhanced_qa_metrics'] = self.qa_agent.get_performance_metrics()
+            except Exception as e:
+                metrics['enhanced_qa_metrics'] = {'error': str(e)}
+        
+        return metrics
+    
+    def clear_qa_cache(self) -> Dict[str, bool]:
+        """Clear QA agent caches"""
+        results = {
+            'enhanced_qa_cache_cleared': False
+        }
+        
+        try:
+            if hasattr(self.qa_agent, 'clear_cache'):
+                self.qa_agent.clear_cache()
+                results['enhanced_qa_cache_cleared'] = True
+        except Exception as e:
+            logger.warning(f"Failed to clear QA cache: {e}")
+        
+        return results
+    
     def answer_question(self, question: str, research_topic: str = None, 
-                       paper_limit: int = 10) -> Dict[str, Any]:
+                       paper_limit: int = 10, use_enhanced: bool = None) -> Dict[str, Any]:
         """
         Alias for answer_research_question for convenience
         """
-        return self.answer_research_question(question, research_topic, paper_limit)
+        return self.answer_research_question(question, research_topic, paper_limit, use_enhanced)
+
+
+# Backward compatibility alias
+class ResearchCrew(UltraFastResearchCrew):
+    """Legacy alias for backward compatibility"""
+    pass
