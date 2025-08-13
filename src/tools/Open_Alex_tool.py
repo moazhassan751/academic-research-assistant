@@ -53,11 +53,15 @@ class OpenAlexTool:
             try:
                 self._rate_limit()
                 
-                # Debug logging
-                logger.debug(f"OpenAlex request URL: {url}")
+                # Debug logging with actual constructed URL
+                constructed_url = f"{url}?" + "&".join([f"{k}={v}" for k, v in params.items()])
+                logger.debug(f"OpenAlex request URL: {constructed_url}")
                 logger.debug(f"OpenAlex request params: {params}")
                 
                 response = self.session.get(url, params=params)
+                
+                # Log the actual URL that was requested
+                logger.debug(f"Actual request URL: {response.url}")
                 
                 # Handle rate limiting
                 if response.status_code == 429:
@@ -96,8 +100,15 @@ class OpenAlexTool:
                     if attempt < max_retries - 1:
                         time.sleep(2 ** attempt)
                         continue
+                elif e.response.status_code == 400:
+                    logger.error(f"OpenAlex 400 Bad Request - invalid parameters")
+                    logger.error(f"Request URL: {response.url}")
+                    logger.error(f"Request params: {params}")
+                    logger.error(f"Response content: {e.response.text[:500] if e.response else 'No response'}")
+                    break
                 else:
                     logger.error(f"OpenAlex HTTP error: {e}")
+                    logger.error(f"Request URL: {response.url if 'response' in locals() else 'Unknown'}")
                     logger.error(f"Response content: {e.response.text[:500] if e.response else 'No response'}")
                     break
                     
@@ -116,6 +127,18 @@ class OpenAlexTool:
             logger.warning("Empty or invalid query provided to OpenAlex search")
             return papers
         
+        # Sanitize query to prevent bad requests
+        query = query.strip()
+        
+        # Remove problematic characters that can cause 400 errors
+        import re
+        query = re.sub(r'[^\w\s\-\.\(\)\"\':]', ' ', query)
+        query = ' '.join(query.split())  # Normalize whitespace
+        
+        if len(query) < 2:
+            logger.warning(f"Query too short for OpenAlex: '{query}'")
+            return papers
+        
         # Validate max_results - OpenAlex doesn't accept 0
         if max_results <= 0:
             logger.warning(f"Invalid max_results: {max_results}, setting to 50")
@@ -125,9 +148,14 @@ class OpenAlexTool:
             # CRITICAL FIX: Set per-page to a valid positive integer
             per_page = min(max_results, 200)  # OpenAlex max is 200 per page
             
-            # Prepare search parameters with enhanced field selection
+            # Prepare search parameters with proper URL encoding
+            from urllib.parse import quote_plus
+            
+            # Replace spaces with + for OpenAlex API compatibility
+            search_query = query.replace(' ', '+')
+            
             params = {
-                'search': query.strip(),
+                'search': search_query,  # Properly formatted query
                 'per-page': per_page,  # FIXED: Never set to 0
                 'sort': 'cited_by_count:desc',
                 'mailto': self.mailto
@@ -142,8 +170,8 @@ class OpenAlexTool:
                 'primary_location',
                 'cited_by_count',
                 'doi',
-                'type',
-                'abstract_inverted_index'
+                'type'
+                # Removed abstract_inverted_index to avoid encoding issues
             ]
             params['select'] = ','.join(select_fields)
             
@@ -171,7 +199,7 @@ class OpenAlexTool:
             logger.info(f"OpenAlex returned {len(results)} results")
             
             if not results:
-                logger.warning("No results field in OpenAlex response or empty results")
+                logger.debug("No results found in OpenAlex response")
                 self.error_counts['empty_responses'] += 1
                 return papers
             
