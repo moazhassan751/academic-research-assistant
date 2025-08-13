@@ -134,6 +134,35 @@ The system automatically adapts to your hardware:
 
 For detailed performance information, see [Performance Guide](docs/PERFORMANCE_OPTIMIZATION_GUIDE.md).
 
+## 🎯 User Interface Options
+
+### 🌟 **Integrated Web Dashboard (Recommended)**
+Launch the comprehensive web interface for the complete research experience:
+
+```bash
+# Windows
+launch_integrated_dashboard.bat
+
+# Linux/macOS
+./launch_integrated_dashboard.sh
+
+# Or manually
+streamlit run integrated_dashboard.py
+```
+
+The web interface provides:
+- **🎓 Integrated Web UI** - Comprehensive dashboard for all research functions
+- **Research Workflow Management** - Complete literature surveys
+- **Q&A Assistant** - Ask research questions  
+- **Paper Database** - Search and browse papers
+- **Analytics Dashboard** - Visualize research data
+- **Export System** - Generate reports in multiple formats
+
+For detailed UI documentation, see [INTEGRATED_UI_GUIDE.md](INTEGRATED_UI_GUIDE.md).
+
+### 🖥️ **Command Line Interface**
+For advanced users and automation, full CLI access is available with all features.
+
 ## 📄 Export & Documentation Features
 
 Professional-grade export capabilities for research dissemination:

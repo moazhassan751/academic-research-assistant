@@ -412,12 +412,17 @@ Your research progress and data remain intact."""
                 safety_level = min(attempt - 1, 3)  # 0, 1, 2, 3
                 prompt_safety_level = min((attempt - 1) * 2, 3)  # 0, 2, 3, 3
                 
-                # Create progressively safer prompt
+                # Create progressively safer prompt with better content filtering
                 safe_prompt = self._create_academic_prompt(
                     original_prompt, 
                     system_prompt, 
                     safety_level=prompt_safety_level
                 )
+                
+                # Additional safety measures for academic content
+                if attempt > 2:
+                    # Remove potentially problematic words/phrases
+                    safe_prompt = self._sanitize_academic_content(safe_prompt, level=safety_level)
                 
                 # Get appropriate safety settings
                 safety_settings = self._get_safety_settings(safety_level)

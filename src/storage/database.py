@@ -446,6 +446,34 @@ class DatabaseManager:
         """Alias for get_all_papers() for compatibility"""
         return self.get_all_papers()
     
+    def get_recent_papers(self, limit: int = 10) -> List[Paper]:
+        """Get recently added papers with thread safety"""
+        try:
+            papers = []
+            conn = self._get_raw_connection()
+            cursor = conn.execute(
+                "SELECT * FROM papers ORDER BY created_at DESC LIMIT ?", 
+                [limit]
+            )
+            rows = cursor.fetchall()
+            
+            for row in rows:
+                try:
+                    row_dict = self._row_to_dict(row, 'papers')
+                    if row_dict:
+                        paper = self._safe_create_paper(row_dict)
+                        if paper:
+                            papers.append(paper)
+                except Exception as e:
+                    logger.warning(f"Error processing recent paper row: {e}")
+                    continue
+                    
+            logger.debug(f"Retrieved {len(papers)} recent papers")
+            return papers
+        except Exception as e:
+            logger.error(f"Error getting recent papers: {e}")
+            return []
+    
     # Note operations with thread safety
     def save_note(self, note: ResearchNote) -> bool:
         """Save a research note with thread safety"""
