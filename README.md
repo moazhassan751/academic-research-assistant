@@ -42,10 +42,39 @@ For complete export documentation, see [EXPORT_FEATURES.md](EXPORT_FEATURES.md).
 
 ## Features
 
+- **🎓 Integrated Web UI** - Comprehensive dashboard for all research functions
 - Multi-agent research workflow
 - Academic database integration (OpenAlex, CrossRef, ArXiv, Semantic Scholar)
 - Intelligent literature survey and synthesis
 - Citation generation and formatting
 - **Multiple export formats** for drafts and bibliographies
+- **❓ Q&A Assistant** - Ask questions and get answers from academic literature
 - Interactive research sessions
 - Progress tracking and checkpoints
+
+## 🚀 Quick Start
+
+### Web Interface (Recommended)
+Launch the integrated dashboard for the complete research experience:
+
+```bash
+# Windows
+launch_integrated_dashboard.bat
+
+# Linux/macOS
+./launch_integrated_dashboard.sh
+
+# Or manually
+streamlit run integrated_dashboard.py
+```
+
+The web interface provides:
+- **Research Workflow Management** - Complete literature surveys
+- **Q&A Assistant** - Ask research questions
+- **Paper Database** - Search and browse papers
+- **Analytics Dashboard** - Visualize research data  
+- **Export System** - Generate reports in multiple formats
+
+For detailed UI documentation, see [INTEGRATED_UI_GUIDE.md](INTEGRATED_UI_GUIDE.md).
+
+### Command Line Interface
