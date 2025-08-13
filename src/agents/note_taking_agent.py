@@ -4,7 +4,7 @@ from uuid import uuid4
 from datetime import datetime
 import json
 import re
-from src.storage.models import Paper, ResearchNote
+from ..storage.models import Paper, ResearchNote
 from ..storage.database import db
 from ..tools.pdf_processor import PDFProcessor
 from ..llm.llm_factory import LLMFactory
