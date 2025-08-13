@@ -63,8 +63,23 @@ class ArxivTool:
                         break
                     
                     # Filter by date if specified
-                    if date_from and result.published < date_from:
-                        continue
+                    if date_from and result.published:
+                        try:
+                            # Handle timezone-aware vs naive datetime comparison
+                            pub_date = result.published
+                            if pub_date.tzinfo is not None and date_from.tzinfo is None:
+                                # Convert naive date_from to UTC for comparison
+                                from datetime import timezone
+                                date_from = date_from.replace(tzinfo=timezone.utc)
+                            elif pub_date.tzinfo is None and date_from.tzinfo is not None:
+                                # Convert timezone-aware date_from to naive for comparison
+                                date_from = date_from.replace(tzinfo=None)
+                            
+                            if pub_date < date_from:
+                                continue
+                        except Exception as e:
+                            logger.debug(f"Date comparison error, skipping date filter: {e}")
+                            # Continue without date filtering for this paper
                     
                     # Enhanced metadata extraction with error handling
                     try:
