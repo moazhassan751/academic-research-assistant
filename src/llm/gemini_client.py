@@ -421,8 +421,10 @@ Your research progress and data remain intact."""
                 
                 # Additional safety measures for academic content
                 if attempt > 2:
-                    # Remove potentially problematic words/phrases
+                    # Remove potentially problematic words/phrases for academic context
                     safe_prompt = self._sanitize_academic_content(safe_prompt, level=safety_level)
+                    # Add academic framing to reduce false positives
+                    safe_prompt = "ACADEMIC RESEARCH CONTEXT: " + safe_prompt
                 
                 # Get appropriate safety settings
                 safety_settings = self._get_safety_settings(safety_level)

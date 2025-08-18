@@ -1367,6 +1367,11 @@ def ask(question, topic, limit, save_result, enhanced, standard, optimized):
                 relevance = f"{source.get('relevance_score', 0):.2f}"
                 citations = str(source.get('citations', 0))
                 
+                # Handle authors field (might be list or string)
+                if isinstance(authors, list):
+                    authors = ', '.join(authors) if authors else 'Unknown'
+                authors = str(authors)
+                
                 # Truncate long titles and authors
                 if len(title) > 37:
                     title = title[:34] + "..."
@@ -1620,7 +1625,7 @@ def qa_session(topic, save_session):
 @click.option('--status', is_flag=True, help='Show QA agent status')
 @click.option('--metrics', is_flag=True, help='Show performance metrics')
 @click.option('--clear-cache', is_flag=True, help='Clear QA agent caches')
-def qa_config(enable, disable, status, metrics, clear_cache):
+def qa_config(enable, status, metrics, clear_cache):
     """Configure and manage QA agents"""
     
     try:
@@ -1636,7 +1641,6 @@ def qa_config(enable, disable, status, metrics, clear_cache):
             status_table.add_column("Feature", style="cyan", width=25)
             status_table.add_column("Status", style="green", width=15)
             
-            status_table.add_row("Standard QA Available", "✅" if qa_status['standard_qa_available'] else "❌")
             status_table.add_row("Enhanced QA Available", "✅" if qa_status['enhanced_qa_available'] else "❌") 
             status_table.add_row("Currently Using Enhanced", "✅" if qa_status['currently_using_enhanced'] else "❌")
             

@@ -956,15 +956,57 @@ class UltraFastResearchCrew:
             
             start_time = time.time()
             
-            # Use the enhanced QA agent (all features are now integrated)
-            logger.info("Using Enhanced QA Agent with all advanced features")
-            
-            # Use the QA agent to answer the question  
-            answer_result = self.qa_agent.answer_question(
-                question=question,
-                research_topic=research_topic,
-                paper_limit=paper_limit
-            )
+            # Try enhanced QA first, with timeout protection
+            try:
+                logger.info("Using Enhanced QA Agent with all advanced features")
+                
+                # Use the QA agent to answer the question with timeout
+                import threading
+                import queue
+                
+                def qa_worker(q):
+                    try:
+                        result = self.qa_agent.answer_question(
+                            question=question,
+                            research_topic=research_topic,
+                            paper_limit=paper_limit
+                        )
+                        q.put(('success', result))
+                    except Exception as e:
+                        q.put(('error', e))
+                
+                # Create queue and thread for timeout handling
+                q = queue.Queue()
+                thread = threading.Thread(target=qa_worker, args=(q,))
+                thread.daemon = True
+                thread.start()
+                thread.join(timeout=30)  # 30 second timeout
+                
+                if thread.is_alive():
+                    # Thread is still running, timeout occurred
+                    raise TimeoutError("Enhanced QA processing timed out after 30 seconds")
+                
+                # Get result from queue
+                try:
+                    status, answer_result = q.get_nowait()
+                    if status == 'error':
+                        raise answer_result
+                except queue.Empty:
+                    raise TimeoutError("Enhanced QA failed to produce result")
+                    
+            except (TimeoutError, Exception) as e:
+                logger.warning(f"Enhanced QA failed or timed out: {e}")
+                logger.info("Falling back to simplified QA agent")
+                
+                # Fallback to simplified QA agent
+                from ..agents.simplified_qa import SimplifiedQAAgent
+                simplified_qa = SimplifiedQAAgent()
+                answer_result = simplified_qa.answer_question(
+                    question=question,
+                    research_topic=research_topic,
+                    paper_limit=paper_limit
+                )
+                answer_result['qa_agent_used'] = 'simplified_fallback'
             
             # Generate follow-up questions
             follow_up_questions = []
@@ -973,10 +1015,17 @@ class UltraFastResearchCrew:
                     follow_up_questions = self.qa_agent.get_enhanced_follow_up_questions(question, answer_result)
                 elif hasattr(self.qa_agent, 'get_follow_up_questions'):
                     follow_up_questions = self.qa_agent.get_follow_up_questions(question, answer_result)
+                elif 'follow_up_questions' not in answer_result:
+                    # Generate simple follow-ups if none exist
+                    follow_up_questions = [
+                        f"What are the main challenges related to {question.lower().replace('what is', '').replace('?', '').strip()}?",
+                        f"What are the latest developments in this area?"
+                    ]
             except Exception as e:
                 logger.warning(f"Could not generate follow-up questions: {e}")
             
-            answer_result['follow_up_questions'] = follow_up_questions
+            if 'follow_up_questions' not in answer_result:
+                answer_result['follow_up_questions'] = follow_up_questions
             
             # Add timing and metadata
             execution_time = time.time() - start_time

@@ -80,9 +80,20 @@ class QuestionAnsweringAgent:
         self.sentence_model = None
         if self.use_semantic_embeddings and HAS_SENTENCE_TRANSFORMERS:
             try:
+                import torch
                 # Use smaller, faster model for better performance
                 model_name = self.config.get('semantic_model', 'all-MiniLM-L6-v2')
-                self.sentence_model = SentenceTransformer(model_name)
+                
+                # Load model on CPU first to avoid meta tensor issues
+                self.sentence_model = SentenceTransformer(model_name, device='cpu')
+                
+                # Move to appropriate device after loading
+                if torch.cuda.is_available():
+                    try:
+                        self.sentence_model = self.sentence_model.to('cuda')
+                    except Exception:
+                        # Fallback to CPU if CUDA move fails
+                        self.sentence_model = self.sentence_model.to('cpu')
                 
                 # Enable model optimizations
                 if hasattr(self.sentence_model, 'eval'):
@@ -236,6 +247,64 @@ class QuestionAnsweringAgent:
                 logger.error(f"Optimized QA error: {e}", exc_info=True)
                 return self._generate_error_response(str(e))
     
+
+    def _create_fallback_response(self, question: str, paper_contexts: List[str] = None) -> Dict[str, Any]:
+        """Create a comprehensive fallback response when LLM fails"""
+        
+        # Extract key terms from question
+        import re
+        key_terms = re.findall(r'\b[a-zA-Z]{4,}\b', question)
+        key_terms = [term for term in key_terms if term.lower() not in 
+                    ['what', 'when', 'where', 'which', 'this', 'that', 'with', 'from']][:5]
+        
+        # Create structured academic response
+        if paper_contexts and len(paper_contexts) > 0:
+            answer = f"""Based on the available research literature, I can provide some insights regarding {' '.join(key_terms[:3])}:
+
+## Academic Research Overview
+
+The current literature in this area suggests several important considerations:
+
+1. **Research Context**: Multiple studies have examined this topic from various perspectives
+2. **Methodological Approaches**: Researchers have employed different analytical frameworks
+3. **Key Findings**: The evidence points to several significant patterns and trends
+
+## Research Gaps and Future Directions
+
+Current research indicates opportunities for:
+- Further empirical investigation
+- Methodological refinement  
+- Cross-disciplinary collaboration
+- Practical application development
+
+*Note: This response was generated when the primary AI system encountered technical difficulties. For more detailed analysis, please rephrase your question or try again.*"""
+        else:
+            answer = f"""I understand you're asking about {' '.join(key_terms[:3])}. 
+
+While I'm experiencing technical difficulties accessing the full research database, I can suggest some general research directions:
+
+## Research Approach
+1. **Literature Search**: Focus on peer-reviewed journals in relevant databases
+2. **Key Terms**: Consider variations of: {', '.join(key_terms[:5])}
+3. **Timeframe**: Include both recent studies and foundational works
+4. **Methodology**: Look for both theoretical and empirical approaches
+
+## Next Steps
+- Try rephrasing your question with more specific terms
+- Consider breaking complex questions into smaller parts
+- Check if additional papers need to be added to the database
+
+*This is a fallback response due to technical limitations. Please try your query again.*"""
+        
+        return {
+            'answer': answer,
+            'confidence': 0.3,
+            'paper_count': len(paper_contexts) if paper_contexts else 0,
+            'top_papers_used': min(3, len(paper_contexts)) if paper_contexts else 0,
+            'sources': [],
+            'status': 'fallback_response'
+        }
+
     def answer_question(self, question: str, research_topic: str = None, 
                        paper_limit: int = None) -> Dict[str, Any]:
         """Synchronous wrapper for optimized async question answering"""
@@ -1448,6 +1517,19 @@ class QuestionAnsweringAgent:
             'confidence': 0.0,
             'paper_count': 0,
             'error': error_message
+        }
+    
+    def _generate_no_results_response(self, question: str) -> Dict[str, Any]:
+        """Generate response when no relevant papers are found"""
+        return {
+            'answer': f"I don't have enough relevant papers in the database to answer the question: '{question}'. Please try conducting research on this topic first using the 'research' command, or search for papers related to your question.",
+            'sources': [],
+            'confidence': 0.0,
+            'paper_count': 0,
+            'follow_up_questions': [
+                f"What papers should I search for related to: {question}?",
+                "How can I find more research on this topic?"
+            ]
         }
     
     # Backward compatibility methods

@@ -478,9 +478,9 @@ def main():
                         # Display metadata
                         col1, col2, col3 = st.columns(3)
                         with col1:
-                            st.metric("Confidence", f"{answer_result['confidence']:.2f}")
+                            st.metric("Confidence", f"{answer_result.get('confidence', 0.0):.2f}")
                         with col2:
-                            st.metric("Papers Used", answer_result['paper_count'])
+                            st.metric("Papers Used", answer_result.get('paper_count', 0))
                         with col3:
                             st.metric("Top Papers", answer_result.get('top_papers_used', 0))
                         
@@ -731,3 +731,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
