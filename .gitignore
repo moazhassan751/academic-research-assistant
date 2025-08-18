@@ -97,3 +97,8 @@ config_backup_*
 
 # Performance profiling
 *.prof 
+# Temporary and generated files
+data/*.db-shm
+data/*.db-wal
+temp_test.txt
+*.tmp
