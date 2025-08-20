@@ -20,6 +20,53 @@ class Paper:
     doi: Optional[str] = None
     arxiv_id: Optional[str] = None
     created_at: Optional[datetime] = None  # Add this field to match database schema
+    _source: Optional[str] = field(default=None, init=False)  # Private field to store explicit source
+    
+    @property
+    def source(self) -> str:
+        """Return the source of the paper based on available identifiers"""
+        # If source was explicitly set, return it
+        if self._source:
+            return self._source
+            
+        # Otherwise, infer from available data
+        if self.arxiv_id:
+            return "ArXiv"
+        elif self.doi and "crossref" in str(self.doi).lower():
+            return "CrossRef"
+        elif self.venue:
+            if "arxiv" in self.venue.lower():
+                return "ArXiv"
+            elif any(word in self.venue.lower() for word in ["conference", "proceedings"]):
+                return "Conference"
+            elif any(word in self.venue.lower() for word in ["journal", "trans"]):
+                return "Journal"
+            else:
+                return self.venue
+        else:
+            return "Unknown"
+    
+    @source.setter
+    def source(self, value: str):
+        """Set the source explicitly"""
+        self._source = value
+    
+    @property
+    def year(self) -> str:
+        """Return the publication year as string"""
+        if self.published_date:
+            return str(self.published_date.year)
+        return "Unknown"
+    
+    @property
+    def topic(self) -> str:
+        """Return the inferred topic from keywords or venue"""
+        if self.keywords:
+            return ", ".join(self.keywords[:3])  # Return first 3 keywords
+        elif self.venue:
+            return self.venue
+        else:
+            return "General"
     
     def to_dict(self) -> Dict[str, Any]:
         return {
