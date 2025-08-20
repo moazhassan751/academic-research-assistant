@@ -1,0 +1,29 @@
+[theme]
+primaryColor = "#0ea5e9"
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#f8fafc"
+textColor = "#1e293b"
+
+[server]
+enableCORS = false
+enableXsrfProtection = false
+maxUploadSize = 200
+
+[browser]
+gatherUsageStats = false
+
+[client]
+caching = true
+displayEnabled = true
+showErrorDetails = false
+
+[runner]
+magicEnabled = true
+installTracer = false
+fixMatplotlib = true
+
+[logger]
+level = "info"
+
+[global]
+developmentMode = false
