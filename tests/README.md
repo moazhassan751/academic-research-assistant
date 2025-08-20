@@ -1,33 +1,52 @@
-# Test Files
+# Test Suite
 
-This folder contains all test files for the Academic Research Assistant project.
+This directory contains the essential test files for the Academic Research Assistant project.
 
-## Test Files Overview
+## Core Test Files
 
-### Core Component Tests
-- `test_database.py` - Database functionality tests
-- `test_async_api_manager.py` - API manager tests
-- `test_literature_survey.py` - Literature survey agent tests
-- `test_validators.py` - Input validation tests
-- `test_error_handler.py` - Error handling tests
-- `test_enhanced_config.py` - Configuration tests
+### Configuration & Setup
+- `conftest.py` - PyTest configuration and fixtures for all tests
 
-### Q&A Feature Tests
-- `test_qa_feature.py` - Main Q&A functionality tests
-- `test_validator_errors.py` - Q&A validation error tests
-- `test_fixes.py` - Bug fix verification tests
+### API Integration Tests  
+- `Open_Alex_test.py` - OpenAlex API integration tests and validation
 
-### Integration & Workflow Tests
-- `complete_workflow_test.py` - End-to-end workflow tests
-- `comprehensive_test.py` - Comprehensive system tests
+### Performance & Benchmarking
+- `performance_test.py` - Comprehensive performance testing and benchmarking
 
-### Debug & Development Tools
-- `debug_test.py` - Debug utilities and tests
-- `debug_qa.py` - Q&A debugging tools
-- `demo_qa_feature.py` - Q&A feature demonstrations
+## Test Structure
 
-### API & External Service Tests  
-- `Open_Alex_test.py` - OpenAlex API integration tests
+### Integration Tests (`integration/`)
+- End-to-end workflow tests
+- Component integration tests
+
+### Unit Tests (`unit/`)
+- Individual component tests
+- Function-level testing
+
+## Running Tests
+
+```bash
+# Run all tests
+pytest
+
+# Run specific test file
+pytest tests/Open_Alex_test.py
+
+# Run performance tests
+python tests/performance_test.py
+
+# Run with verbose output
+pytest -v
+```
+
+## Test Quality Standards
+
+This test suite maintains high quality by:
+- ✅ **Focused scope** - Each test has a clear purpose
+- ✅ **Proper fixtures** - Reusable test data and mocks
+- ✅ **Performance validation** - Tests include speed benchmarks
+- ✅ **Integration coverage** - Tests real API interactions
+- ✅ **Documentation** - Clear test descriptions and usage
 - `quick_test.py` - Quick functionality tests
 
 ### Configuration
