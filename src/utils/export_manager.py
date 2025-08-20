@@ -94,6 +94,8 @@ class ExportManager:
                 return self._export_draft_latex(draft, f"{output_path}.tex")
             elif format_type == 'html':
                 return self._export_draft_html(draft, f"{output_path}.html")
+            elif format_type == 'json':
+                return self._export_draft_json(draft, f"{output_path}.json")
             else:
                 raise ValueError(f"Format {format_type} handler not implemented")
                 
@@ -369,6 +371,18 @@ class ExportManager:
             return True
         except Exception as e:
             logger.error(f"Error exporting draft to HTML: {e}")
+            return False
+    
+    def _export_draft_json(self, draft: Dict[str, Any], filepath: str) -> bool:
+        """Export draft as JSON document"""
+        try:
+            import json
+            with open(filepath, 'w', encoding='utf-8') as f:
+                json.dump(draft, f, indent=2, ensure_ascii=False, default=str)
+            logger.info(f"Draft exported to JSON: {filepath}")
+            return True
+        except Exception as e:
+            logger.error(f"Error exporting draft to JSON: {e}")
             return False
     
     # Bibliography export methods
