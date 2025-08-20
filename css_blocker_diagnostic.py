@@ -23,6 +23,7 @@ def analyze_css_blockers():
     blockers_found = []
     warnings = []
     optimizations = []
+    performance_issues = []
     
     # 1. Check unsafe_allow_html usage
     if 'unsafe_allow_html=False' in content:
@@ -92,6 +93,18 @@ def analyze_css_blockers():
     inline_style_count = len(re.findall(r'style=', content))
     if inline_style_count > 120:
         performance_issues.append(f"⚠️  Many inline styles ({inline_style_count}) - consider CSS classes")
+        # Analyze common inline style patterns
+        flex_patterns = len(re.findall(r'display:\s*flex', content))
+        color_patterns = len(re.findall(r'color:\s*var\(--[^)]+\)', content))
+        spacing_patterns = len(re.findall(r'margin|padding', content))
+        
+        if flex_patterns > 10:
+            optimizations.append(f"💡 Create .flex-* utility classes ({flex_patterns} flex patterns found)")
+        if color_patterns > 15:
+            optimizations.append(f"💡 Create .text-* color classes ({color_patterns} color patterns found)")
+        if spacing_patterns > 20:
+            optimizations.append(f"💡 Create .m-* .p-* spacing classes ({spacing_patterns} spacing patterns found)")
+            
     elif inline_style_count > 50:
         warnings.append(f"⚠️  Moderate inline styles ({inline_style_count}) - optimization possible")
     else:
@@ -176,6 +189,47 @@ def analyze_css_blockers():
     print("  ✅ Enable hardware acceleration in browser settings")
     print("  ✅ Ensure JavaScript is enabled")
     print("  ✅ Clear browser cache if animations don't appear")
+    
+    # Comprehensive optimization guide
+    if blockers_found or performance_issues or len(optimizations) > 2:
+        print("\n🚀 PERFORMANCE OPTIMIZATION GUIDE:")
+        print("=" * 60)
+        
+        if inline_style_count > 120:
+            print("📋 CSS CLASS OPTIMIZATION RECOMMENDATIONS:")
+            print("  1. Create utility classes for common flex layouts:")
+            print("     .flex-between { display: flex; justify-content: space-between; align-items: center; }")
+            print("     .flex-center { display: flex; align-items: center; justify-content: center; }")
+            print("     .flex-column { display: flex; flex-direction: column; }")
+            print()
+            print("  2. Create semantic color classes:")
+            print("     .text-primary { color: var(--primary-600); }")
+            print("     .text-secondary { color: var(--gray-600); }")
+            print("     .text-muted { color: var(--gray-400); }")
+            print()
+            print("  3. Create spacing utility classes:")
+            print("     .mt-sm { margin-top: var(--spacing-sm); }")
+            print("     .mb-md { margin-bottom: var(--spacing-md); }")
+            print("     .p-lg { padding: var(--spacing-lg); }")
+            print()
+            print("  4. Create component-specific classes:")
+            print("     .paper-header { display: flex; justify-content: space-between; margin-bottom: var(--spacing-md); }")
+            print("     .metric-value { font-size: var(--font-size-3xl); font-weight: 700; }")
+            print("     .status-badge { padding: var(--spacing-xs) var(--spacing-sm); border-radius: var(--radius-md); }")
+        
+        print("\n⚡ ANIMATION PERFORMANCE TIPS:")
+        print("  1. Use transform and opacity for animations (GPU accelerated)")
+        print("  2. Add will-change property for elements that will animate")
+        print("  3. Use translate3d(0,0,0) to force hardware acceleration")
+        print("  4. Avoid animating layout properties (width, height, padding, margin)")
+        print("  5. Use CSS containment for isolated animation areas")
+        
+        print("\n🎨 VISUAL ENHANCEMENT SUGGESTIONS:")
+        print("  1. Add micro-interactions for better UX")
+        print("  2. Use consistent timing functions (cubic-bezier)")
+        print("  3. Add loading states with skeleton screens")
+        print("  4. Implement proper focus management for accessibility")
+        print("  5. Add reduced motion support with @media (prefers-reduced-motion)")
     
     return len(blockers_found) == 0 and len(performance_issues) == 0
 
