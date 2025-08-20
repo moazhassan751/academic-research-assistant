@@ -171,7 +171,7 @@ Add the following to your `.env` file:
 
 ```bash
 # Required for AI features
-GEMINI_API_KEY=your_gemini_api_key_here
+GEMINI_API_KEY=AIzaSyCiO-OZd2PX1hrg8c1NmMgrL1SHkpGBJCE
 
 # Required for better API rate limits
 OPENALEX_EMAIL=your_email@example.com
