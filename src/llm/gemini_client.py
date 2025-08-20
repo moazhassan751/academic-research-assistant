@@ -16,7 +16,7 @@ class GeminiClient:
         self.last_request_time = 0
         self.min_request_interval = 1.0
         self.retry_count = 0
-        self.max_retries = 5  # Increased for better success rate
+        self.max_retries = 3  # Reduced from 5 for faster processing
         self.consecutive_safety_blocks = 0
         self.max_safety_blocks = 3
         
@@ -182,13 +182,13 @@ Respond with educational content suitable for academic research."""
         return academic_frame
     
     def _get_safety_settings(self, level: int = 0) -> List[Dict[str, str]]:
-        """Get progressively safer settings"""
+        """Get progressively safer settings - optimized for academic research"""
         safety_configs = [
-            # Level 0: Standard settings
+            # Level 0: Academic research optimized
             [
-                {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
-                {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
-                {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
+                {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_ONLY_HIGH"},
+                {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_ONLY_HIGH"},
+                {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_ONLY_HIGH"},
                 {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_ONLY_HIGH"}
             ],
             # Level 1: More permissive
@@ -198,19 +198,19 @@ Respond with educational content suitable for academic research."""
                 {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_ONLY_HIGH"},
                 {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_ONLY_HIGH"}
             ],
-            # Level 2: Very permissive
+            # Level 2: Very permissive for legitimate academic content
             [
                 {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
                 {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_ONLY_HIGH"},
                 {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_ONLY_HIGH"},
-                {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"}
+                {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_ONLY_HIGH"}
             ],
-            # Level 3: Maximum permissive
+            # Level 3: Maximum permissive for research purposes
             [
                 {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
-                {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
-                {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
-                {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"}
+                {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_ONLY_HIGH"},
+                {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_ONLY_HIGH"},
+                {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_ONLY_HIGH"}
             ]
         ]
         
@@ -232,11 +232,11 @@ Respond with educational content suitable for academic research."""
                     
                     if finish_reason == 1:  # STOP - normal completion
                         pass
-                    elif finish_reason == 2:  # MAX_TOKENS
-                        logger.debug("Response truncated due to max tokens")
-                    elif finish_reason == 3:  # SAFETY
+                    elif finish_reason == 2:  # SAFETY - blocked by safety filters
                         logger.warning(f"Response blocked due to safety filters (finish_reason: {finish_reason})")
                         return None
+                    elif finish_reason == 3:  # MAX_TOKENS
+                        logger.debug("Response truncated due to max tokens")
                     elif finish_reason == 4:  # RECITATION
                         logger.warning(f"Response blocked due to recitation (finish_reason: {finish_reason})")
                         return None
@@ -394,7 +394,7 @@ Your research progress and data remain intact."""
             return "Empty prompt provided. Please provide a valid research query."
         
         original_prompt = prompt
-        max_attempts = 5
+        max_attempts = 3  # Reduced from 5 for faster processing
         attempt = 0
         last_error = None
         
@@ -473,7 +473,7 @@ Your research progress and data remain intact."""
                     logger.warning(f"Attempt {attempt} failed: Response blocked or empty (Safety filter triggered)")
                     
                     if attempt < max_attempts:
-                        wait_time = min(3, attempt * 1.0)  # Reduced wait time
+                        wait_time = min(1.5, attempt * 0.5)  # Further reduced wait time
                         logger.info(f"Retrying with higher safety level after {wait_time}s delay...")
                         time.sleep(wait_time)
                         continue

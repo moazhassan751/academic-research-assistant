@@ -637,6 +637,141 @@ class DatabaseManager:
             logger.error(f"Error getting stats: {e}")
             return {}
     
+    def get_papers_by_source(self) -> Dict[str, int]:
+        """Get paper count by venue (journal/conference)"""
+        try:
+            conn = self._get_raw_connection()
+            cursor = conn.execute("""
+                SELECT 
+                    CASE 
+                        WHEN venue IS NULL OR venue = '' THEN 'Unknown Source'
+                        WHEN venue LIKE '%arXiv%' OR venue LIKE '%arxiv%' THEN 'ArXiv'
+                        WHEN venue LIKE '%conference%' OR venue LIKE '%Conference%' THEN 'Conference'
+                        WHEN venue LIKE '%journal%' OR venue LIKE '%Journal%' THEN 'Journal'
+                        WHEN venue LIKE '%workshop%' OR venue LIKE '%Workshop%' THEN 'Workshop'
+                        ELSE SUBSTR(venue, 1, 20)
+                    END as source_type,
+                    COUNT(*) as count 
+                FROM papers 
+                GROUP BY source_type
+                ORDER BY count DESC
+                LIMIT 10
+            """)
+            return dict(cursor.fetchall())
+        except Exception as e:
+            logger.error(f"Error getting papers by source: {e}")
+            return {}
+    
+    def get_papers_by_year(self) -> Dict[str, int]:
+        """Get paper count by publication year from published_date"""
+        try:
+            conn = self._get_raw_connection()
+            cursor = conn.execute("""
+                SELECT 
+                    CASE 
+                        WHEN published_date IS NOT NULL AND published_date != '' THEN 
+                            CASE 
+                                WHEN published_date LIKE '____-%' THEN SUBSTR(published_date, 1, 4)
+                                WHEN published_date LIKE '%20__' THEN SUBSTR(published_date, -4, 4)
+                                WHEN published_date LIKE '%202_' OR published_date LIKE '%201_' THEN SUBSTR(published_date, -4, 4)
+                                ELSE 'Unknown'
+                            END
+                        ELSE 'Unknown'
+                    END as year_str,
+                    COUNT(*) as count 
+                FROM papers 
+                GROUP BY year_str
+                HAVING year_str != 'Unknown'
+                ORDER BY year_str DESC
+                LIMIT 10
+            """)
+            return dict(cursor.fetchall())
+        except Exception as e:
+            logger.error(f"Error getting papers by year: {e}")
+            return {}
+    
+    def get_citation_distribution(self) -> Dict[str, int]:
+        """Get citation count distribution"""
+        try:
+            conn = self._get_raw_connection()
+            cursor = conn.execute("""
+                SELECT 
+                    CASE 
+                        WHEN citations IS NULL OR citations = 0 THEN '0'
+                        WHEN citations <= 10 THEN '1-10'
+                        WHEN citations <= 50 THEN '11-50'
+                        WHEN citations <= 100 THEN '51-100'
+                        ELSE '100+'
+                    END as citation_range,
+                    COUNT(*) as count
+                FROM papers 
+                GROUP BY citation_range
+                ORDER BY 
+                    CASE citation_range
+                        WHEN '0' THEN 1
+                        WHEN '1-10' THEN 2
+                        WHEN '11-50' THEN 3
+                        WHEN '51-100' THEN 4
+                        ELSE 5
+                    END
+            """)
+            return dict(cursor.fetchall())
+        except Exception as e:
+            logger.error(f"Error getting citation distribution: {e}")
+            return {}
+    
+    def get_trending_topics(self, limit: int = 10) -> List[Dict[str, Any]]:
+        """Get trending research topics from paper titles and abstracts"""
+        try:
+            conn = self._get_raw_connection()
+            # Simple keyword extraction from titles
+            cursor = conn.execute("""
+                WITH topic_words AS (
+                    SELECT 
+                        CASE 
+                            WHEN LOWER(title) LIKE '%machine learning%' OR LOWER(abstract) LIKE '%machine learning%' THEN 'Machine Learning'
+                            WHEN LOWER(title) LIKE '%deep learning%' OR LOWER(abstract) LIKE '%deep learning%' THEN 'Deep Learning'
+                            WHEN LOWER(title) LIKE '%artificial intelligence%' OR LOWER(title) LIKE '%ai%' THEN 'Artificial Intelligence'
+                            WHEN LOWER(title) LIKE '%neural network%' OR LOWER(abstract) LIKE '%neural network%' THEN 'Neural Networks'
+                            WHEN LOWER(title) LIKE '%computer vision%' OR LOWER(abstract) LIKE '%computer vision%' THEN 'Computer Vision'
+                            WHEN LOWER(title) LIKE '%natural language%' OR LOWER(abstract) LIKE '%nlp%' THEN 'Natural Language Processing'
+                            WHEN LOWER(title) LIKE '%blockchain%' OR LOWER(abstract) LIKE '%blockchain%' THEN 'Blockchain'
+                            WHEN LOWER(title) LIKE '%quantum%' OR LOWER(abstract) LIKE '%quantum%' THEN 'Quantum Computing'
+                            WHEN LOWER(title) LIKE '%data mining%' OR LOWER(abstract) LIKE '%data mining%' THEN 'Data Mining'
+                            WHEN LOWER(title) LIKE '%reinforcement%' OR LOWER(abstract) LIKE '%reinforcement%' THEN 'Reinforcement Learning'
+                            ELSE 'General Research'
+                        END as topic
+                    FROM papers
+                    WHERE title IS NOT NULL
+                )
+                SELECT topic, COUNT(*) as count
+                FROM topic_words
+                WHERE topic != 'General Research'
+                GROUP BY topic
+                ORDER BY count DESC
+                LIMIT ?
+            """, (limit,))
+            
+            results = cursor.fetchall()
+            return [{'topic': topic, 'count': count} for topic, count in results]
+            
+        except Exception as e:
+            logger.error(f"Error getting trending topics: {e}")
+            return []
+    
+    def get_analytics_data(self) -> Dict[str, Any]:
+        """Get comprehensive analytics data for dashboard"""
+        try:
+            return {
+                'papers_by_source': self.get_papers_by_source(),
+                'papers_by_year': self.get_papers_by_year(),
+                'citation_distribution': self.get_citation_distribution(),
+                'trending_topics': self.get_trending_topics()
+            }
+        except Exception as e:
+            logger.error(f"Error getting analytics data: {e}")
+            return {}
+    
     def close_connections(self):
         """Close thread-local connections and cleanup resources"""
         try:

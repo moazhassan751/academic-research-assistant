@@ -1532,6 +1532,20 @@ While I'm experiencing technical difficulties accessing the full research databa
             ]
         }
     
+    def _generate_low_relevance_response(self, question: str) -> Dict[str, Any]:
+        """Generate response when papers have low relevance scores"""
+        return {
+            'answer': f"I found some papers in the database, but they don't seem highly relevant to your question: '{question}'. The available papers may contain some related information, but I cannot provide a confident answer. Please try rephrasing your question or conducting more specific research on this topic.",
+            'sources': [],
+            'confidence': 0.2,
+            'paper_count': 0,
+            'follow_up_questions': [
+                f"Can you rephrase this question: {question}?",
+                "What specific aspects would you like to know more about?",
+                "Should I search for more papers on this topic?"
+            ]
+        }
+    
     # Backward compatibility methods
     def get_follow_up_questions(self, question: str, answer_result: Dict[str, Any]) -> List[str]:
         """Backward compatibility method"""
