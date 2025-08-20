@@ -277,6 +277,52 @@ class Config:
             'author_match_threshold': 0.7
         })
     
+    def get_export_config(self) -> Dict[str, Any]:
+        """Get export configuration"""
+        return self.get('export', {
+            'output_directory': 'data/outputs',
+            'default_formats': ['pdf', 'docx'],
+            'pdf_settings': {
+                'page_size': 'A4',
+                'margin': '1in',
+                'font_size': 12
+            },
+            'docx_settings': {
+                'font_name': 'Calibri',
+                'font_size': 11
+            },
+            'max_file_size': 104857600
+        })
+    
+    def get_security_config(self) -> Dict[str, Any]:
+        """Get security configuration"""
+        return self.get('security', {
+            'api_key_encryption': True,
+            'ssl_verify': True,
+            'request_timeout': 30,
+            'max_request_size': 10485760,
+            'allowed_domains': [
+                'api.openalex.org',
+                'api.crossref.org',
+                'api.semanticscholar.org',
+                'export.arxiv.org',
+                'generativelanguage.googleapis.com'
+            ]
+        })
+    
+    def get_research_config(self) -> Dict[str, Any]:
+        """Get complete research configuration"""
+        return self.get('research', {
+            'max_papers_default': 50,
+            'max_retries': 3,
+            'min_confidence_threshold': 0.5,
+            'deduplication': {
+                'doi_priority': True,
+                'title_similarity_threshold': 0.85,
+                'author_match_threshold': 0.7
+            }
+        })
+    
     def save_config(self, config_path: Optional[str] = None) -> bool:
         """Save current configuration to YAML file"""
         try:
