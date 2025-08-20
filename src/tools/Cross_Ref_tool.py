@@ -100,11 +100,15 @@ class CrossRefTool:
                     time.sleep(2 ** attempt)
                     continue
                 
-            except requests.exceptions.ConnectionError:
+            except requests.exceptions.ConnectionError as e:
                 self.error_counts['connection_errors'] += 1
-                logger.warning(f"CrossRef connection error (attempt {attempt + 1}/{max_retries})")
+                error_msg = str(e).lower()
+                if any(term in error_msg for term in ["dns", "getaddrinfo", "name resolution", "11001"]):
+                    logger.warning(f"CrossRef DNS resolution error (attempt {attempt + 1}/{max_retries}): {e}")
+                else:
+                    logger.warning(f"CrossRef connection error (attempt {attempt + 1}/{max_retries})")
                 if attempt < max_retries - 1:
-                    time.sleep(2 ** attempt)
+                    time.sleep(min(30, 2 ** attempt))  # Cap backoff at 30 seconds
                     continue
                     
             except requests.exceptions.HTTPError as e:

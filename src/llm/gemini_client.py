@@ -498,10 +498,10 @@ Your research progress and data remain intact."""
                         time.sleep(wait_time)
                         continue
                 
-                elif any(term in error_msg for term in ["503", "502", "500", "timeout"]):
+                elif any(term in error_msg for term in ["503", "502", "500", "timeout", "dns", "getaddrinfo", "handshaker", "socket", "connection"]):
                     if attempt < max_attempts:
                         wait_time = min(30, 5 * attempt)
-                        logger.warning(f"Service error, retrying in {wait_time} seconds...")
+                        logger.warning(f"Network/DNS error, retrying in {wait_time} seconds...")
                         time.sleep(wait_time)
                         continue
                 
