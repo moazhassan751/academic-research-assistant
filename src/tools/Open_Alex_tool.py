@@ -2,6 +2,7 @@ import requests
 import time
 import asyncio
 import aiohttp
+import json
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
 from urllib.parse import quote_plus
@@ -119,7 +120,19 @@ class UltraFastOpenAlexTool:
                     break
                 
                 response.raise_for_status()
-                return response.json()
+                
+                # Check if response has content
+                if not response.text.strip():
+                    logger.warning("OpenAlex returned empty response")
+                    return None
+                
+                # Try to parse JSON
+                try:
+                    return response.json()
+                except json.JSONDecodeError as json_error:
+                    logger.error(f"OpenAlex JSON parsing error: {json_error}")
+                    logger.error(f"Response content: {response.text[:500]}")
+                    return None
                 
             except requests.exceptions.Timeout:
                 self.error_counts['timeouts'] += 1
@@ -128,11 +141,15 @@ class UltraFastOpenAlexTool:
                     time.sleep(2 ** attempt)  # Exponential backoff
                     continue
                 
-            except requests.exceptions.ConnectionError:
+            except requests.exceptions.ConnectionError as e:
                 self.error_counts['connection_errors'] += 1
-                logger.warning(f"OpenAlex connection error (attempt {attempt + 1}/{max_retries})")
+                error_msg = str(e).lower()
+                if any(term in error_msg for term in ["dns", "getaddrinfo", "name resolution", "11001"]):
+                    logger.warning(f"OpenAlex DNS resolution error (attempt {attempt + 1}/{max_retries}): {e}")
+                else:
+                    logger.warning(f"OpenAlex connection error (attempt {attempt + 1}/{max_retries})")
                 if attempt < max_retries - 1:
-                    time.sleep(2 ** attempt)
+                    time.sleep(min(30, 2 ** attempt))  # Cap backoff at 30 seconds
                     continue
                     
             except requests.exceptions.HTTPError as e:
@@ -192,11 +209,11 @@ class UltraFastOpenAlexTool:
             # Prepare search parameters with proper URL encoding
             from urllib.parse import quote_plus
             
-            # Replace spaces with + for OpenAlex API compatibility
+            # Format query for OpenAlex filter parameter
             search_query = query.replace(' ', '+')
             
             params = {
-                'search': search_query,  # Properly formatted query
+                'filter': f'display_name.search:{search_query}',  # FIXED: Use proper OpenAlex filter format
                 'per-page': per_page,  # FIXED: Never set to 0
                 'sort': 'cited_by_count:desc',
                 'mailto': self.mailto
@@ -216,10 +233,15 @@ class UltraFastOpenAlexTool:
             ]
             params['select'] = ','.join(select_fields)
             
-            # Add date filter if specified
+            # Add date filter if specified - combine with search filter
             if date_from and isinstance(date_from, datetime):
                 date_str = date_from.strftime('%Y-%m-%d')
-                params['filter'] = f'publication_date:>{date_str}'
+                # Combine search and date filters using comma separation
+                existing_filter = params.get('filter', '')
+                if existing_filter:
+                    params['filter'] = f'{existing_filter},publication_date:>{date_str}'
+                else:
+                    params['filter'] = f'publication_date:>{date_str}'
             
             logger.info(f"Searching OpenAlex for: {query} (max: {max_results})")
             
