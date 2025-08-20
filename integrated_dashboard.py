@@ -16,9 +16,29 @@ from typing import Dict, List, Any, Optional
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
-# Import the actual research functionality
+# Import production error handling first
+try:
+    from production_error_handler import production_handler, production_safe, validate_inputs, safe_data_access
+    PRODUCTION_ERROR_HANDLING = True
+except ImportError:
+    PRODUCTION_ERROR_HANDLING = False
+    print("⚠️ Production error handling not available - using basic error handling")
+
+# Import the actual research functionality with comprehensive error handling
 RESEARCH_AVAILABLE = False
 import_errors = []
+
+# Try to import export manager
+try:
+    from src.utils.export_manager import export_manager
+    EXPORT_MANAGER_AVAILABLE = True
+except ImportError:
+    try:
+        from simple_export_manager import export_manager
+        EXPORT_MANAGER_AVAILABLE = True
+    except ImportError:
+        EXPORT_MANAGER_AVAILABLE = False
+        export_manager = None
 
 # Import performance monitoring
 try:
@@ -746,6 +766,86 @@ html, body {
     outline-offset: 2px !important;
 }
 
+/* Performance Optimizations and Animations */
+.paper-card, .modern-card, .metric-card {
+    will-change: transform;
+    backface-visibility: hidden;
+    transform: translate3d(0, 0, 0); /* Force GPU acceleration */
+    contain: layout style; /* CSS containment for better performance */
+}
+
+/* Enhanced animations with better performance */
+.paper-card {
+    transition: transform var(--transition-normal), 
+                box-shadow var(--transition-normal),
+                border-color var(--transition-normal);
+}
+
+.paper-card:hover {
+    transform: translateY(-2px) translateZ(0);
+}
+
+.metric-card {
+    transition: transform var(--transition-normal), 
+                box-shadow var(--transition-normal);
+}
+
+.metric-card:hover {
+    transform: translateY(-3px) scale(1.02) translateZ(0);
+}
+
+.modern-button {
+    transition: transform var(--transition-fast),
+                box-shadow var(--transition-fast),
+                background var(--transition-fast);
+}
+
+.modern-button:hover {
+    transform: translateY(-1px) translateZ(0);
+}
+
+/* Micro-interactions for better UX */
+.status-badge {
+    transition: all var(--transition-fast);
+}
+
+.status-badge:hover {
+    transform: scale(1.05);
+}
+
+/* Loading states and skeleton screens */
+.loading-skeleton {
+    background: linear-gradient(90deg, var(--gray-200) 25%, var(--gray-100) 50%, var(--gray-200) 75%);
+    background-size: 200% 100%;
+    animation: loading-shimmer 2s infinite;
+}
+
+@keyframes loading-shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+
+/* Focus management for accessibility */
+.modern-button:focus-visible,
+.status-badge:focus-visible {
+    outline: 2px solid var(--primary-500);
+    outline-offset: 2px;
+    box-shadow: 0 0 0 4px rgba(14, 165, 233, 0.15);
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+    .paper-card, .metric-card, .modern-button, .status-badge {
+        transition: none !important;
+        animation: none !important;
+        transform: none !important;
+    }
+    
+    .paper-card:hover, .metric-card:hover, .modern-button:hover {
+        transform: none !important;
+    }
+}
+
 /* Performance Optimizations */
 .paper-card, .modern-card, .metric-card {
     will-change: transform;
@@ -767,6 +867,255 @@ html, body {
         transition-duration: 0.01ms !important;
     }
 }
+
+/* Enhanced Utility Classes for Common Styles */
+.flex-center {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.flex-between {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.flex-start {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+}
+
+.flex-column {
+    display: flex;
+    flex-direction: column;
+}
+
+.flex-wrap {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-xs);
+}
+
+.text-center {
+    text-align: center;
+}
+
+.text-right {
+    text-align: right;
+}
+
+/* Enhanced Color Utility Classes */
+.text-primary {
+    color: var(--primary-600);
+}
+
+.text-primary-700 {
+    color: var(--primary-700);
+}
+
+.text-secondary {
+    color: var(--gray-600);
+}
+
+.text-secondary-sm {
+    color: var(--gray-600);
+    font-size: var(--font-size-sm);
+}
+
+.text-muted {
+    color: var(--gray-400);
+}
+
+.text-gray-500 {
+    color: var(--gray-500);
+}
+
+.text-gray-700 {
+    color: var(--gray-700);
+}
+
+.text-success {
+    color: var(--success-600);
+}
+
+.text-success-700 {
+    color: var(--success-700);
+}
+
+.text-warning {
+    color: var(--warning-600);
+}
+
+.text-error {
+    color: var(--error-600);
+}
+
+/* Weight and style combinations */
+.text-secondary-weight {
+    color: var(--gray-600);
+    font-weight: 500;
+}
+
+.text-primary-heading {
+    color: var(--primary-700);
+    margin-bottom: var(--spacing-md);
+    font-weight: 600;
+}
+
+.text-secondary-spacing {
+    color: var(--gray-600);
+    margin-bottom: var(--spacing-lg);
+}
+
+.text-secondary-sm-spacing {
+    color: var(--gray-600);
+    font-size: var(--font-size-sm);
+    margin: var(--spacing-xs) 0;
+}
+
+/* Enhanced Spacing Utility Classes */
+.m-0 { margin: 0; }
+.mt-xs { margin-top: var(--spacing-xs); }
+.mt-sm { margin-top: var(--spacing-sm); }
+.mt-md { margin-top: var(--spacing-md); }
+.mt-lg { margin-top: var(--spacing-lg); }
+
+.mb-xs { margin-bottom: var(--spacing-xs); }
+.mb-sm { margin-bottom: var(--spacing-sm); }
+.mb-md { margin-bottom: var(--spacing-md); }
+.mb-lg { margin-bottom: var(--spacing-lg); }
+.mb-xl { margin-bottom: var(--spacing-xl); }
+
+.ml-md { margin-left: var(--spacing-md); }
+.mr-md { margin-right: var(--spacing-md); }
+
+.p-0 { padding: 0; }
+.p-xs { padding: var(--spacing-xs); }
+.p-sm { padding: var(--spacing-sm); }
+.p-md { padding: var(--spacing-md); }
+.p-lg { padding: var(--spacing-lg); }
+.p-xl { padding: var(--spacing-xl); }
+
+/* Enhanced Component-Specific Classes */
+.paper-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: var(--spacing-md);
+}
+
+.paper-meta {
+    display: flex;
+    gap: var(--spacing-lg);
+    margin-top: var(--spacing-xs);
+}
+
+.paper-meta-item {
+    color: var(--gray-500);
+    font-size: var(--font-size-sm);
+}
+
+.paper-tags {
+    display: flex;
+    gap: var(--spacing-xs);
+    flex-wrap: wrap;
+}
+
+.paper-actions {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.metric-container {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.metric-value {
+    font-size: var(--font-size-3xl);
+    font-weight: 700;
+    margin-bottom: var(--spacing-xs);
+}
+
+.metric-label {
+    font-size: var(--font-size-sm);
+    opacity: 0.9;
+    font-weight: 500;
+}
+
+.metric-trend {
+    margin-top: var(--spacing-xs);
+}
+
+.metric-trend-text {
+    font-size: var(--font-size-sm);
+    font-weight: 500;
+}
+
+.status-badge {
+    padding: var(--spacing-xs) var(--spacing-sm);
+    border-radius: var(--radius-md);
+    font-size: var(--font-size-xs);
+    font-weight: 500;
+    border: 1px solid;
+}
+
+.status-badge-primary {
+    background: var(--primary-50);
+    color: var(--primary-600);
+    border-color: var(--primary-200);
+}
+
+.status-badge-gray {
+    background: var(--gray-50);
+    color: var(--gray-600);
+    border-color: var(--gray-200);
+}
+
+.status-badge-success {
+    background: var(--success-50);
+    color: var(--success-600);
+    border-color: var(--success-200);
+}
+
+.author-info {
+    color: var(--gray-600);
+    margin: 0;
+    font-size: var(--font-size-sm);
+    line-height: 1.4;
+}
+
+.paper-abstract {
+    color: var(--gray-700);
+    font-size: var(--font-size-sm);
+    line-height: 1.5;
+    margin-bottom: var(--spacing-md);
+}
+
+.icon-large {
+    font-size: 2.5rem;
+    opacity: 0.8;
+}
+
+/* Button Size Variants */
+.btn-xs {
+    padding: var(--spacing-xs) var(--spacing-sm);
+    font-size: var(--font-size-xs);
+}
+
+.btn-sm {
+    padding: var(--spacing-sm) var(--spacing-md);
+    font-size: var(--font-size-sm);
+}
+
+/* Layout Helpers */
+.w-full { width: 100%; }
+.h-full { height: 100%; }
+.flex-1 { flex: 1; }
 
 /* Utility Classes for Common Styles */
 .flex-center {
@@ -915,16 +1264,22 @@ if 'page_load_time' not in st.session_state:
 @with_performance_tracking("get_database_stats") if PERFORMANCE_MONITORING else (lambda f: f)
 def get_database_stats():
     """Get current database statistics with caching"""
+    default_stats = {'papers': 0, 'notes': 0, 'themes': 0, 'citations': 0, 'last_updated': 'N/A'}
+    
     if not RESEARCH_AVAILABLE:
-        return {'papers': 0, 'notes': 0, 'themes': 0, 'citations': 0, 'last_updated': 'N/A'}
+        return default_stats
     
     try:
         stats = db.get_stats()
+        # Ensure all required keys exist with default values
+        for key in default_stats:
+            if key not in stats:
+                stats[key] = default_stats[key]
         stats['last_updated'] = datetime.now().strftime("%Y-%m-%d %H:%M")
         return stats
     except Exception as e:
         logger.error(f"Error getting database stats: {e}")
-        return {'papers': 0, 'notes': 0, 'themes': 0, 'citations': 0, 'last_updated': 'Error'}
+        return default_stats
 
 @st.cache_data(ttl=600, show_spinner=False)  # Cache for 10 minutes
 @with_performance_tracking("get_recent_papers") if PERFORMANCE_MONITORING else (lambda f: f)
@@ -949,31 +1304,104 @@ def get_research_analytics():
     
     try:
         # Get REAL analytics data from database
-        analytics = db.get_analytics_data()  # Call real database method
+        analytics = {}
         
-        # If db.get_analytics_data() doesn't exist, build from real data
+        # Try to get analytics data from database methods
+        try:
+            analytics = db.get_analytics_data()
+        except AttributeError:
+            # Build analytics from available database methods
+            analytics = {}
+        
+        # If no analytics or analytics is empty, build from available data
         if not analytics:
-            analytics = {
-                'papers_by_source': db.get_papers_by_source(),
-                'papers_by_year': db.get_papers_by_year(),
-                'citation_distribution': db.get_citation_distribution(),
-                'trending_topics': db.get_trending_topics()
-            }
+            try:
+                # Get basic stats first
+                basic_stats = db.get_stats()
+                papers = db.get_recent_papers(limit=1000) if hasattr(db, 'get_recent_papers') else []
+                
+                # Build papers by source
+                papers_by_source = {}
+                papers_by_year = {}
+                citation_counts = []
+                topics = []
+                
+                for paper in papers:
+                    # Source distribution
+                    source = getattr(paper, 'source', 'Unknown')
+                    papers_by_source[source] = papers_by_source.get(source, 0) + 1
+                    
+                    # Year distribution
+                    year = getattr(paper, 'year', 'Unknown')
+                    if year != 'Unknown':
+                        papers_by_year[str(year)] = papers_by_year.get(str(year), 0) + 1
+                    
+                    # Citation distribution
+                    citations = getattr(paper, 'citations', 0)
+                    if isinstance(citations, (int, float)) and citations > 0:
+                        citation_counts.append(citations)
+                    
+                    # Topics
+                    topic = getattr(paper, 'topic', None)
+                    if topic:
+                        topics.append(topic)
+                
+                # Build citation distribution
+                citation_distribution = {}
+                if citation_counts:
+                    # Create citation ranges
+                    ranges = [(0, 10), (10, 50), (50, 100), (100, 500), (500, float('inf'))]
+                    for min_val, max_val in ranges:
+                        count = sum(1 for c in citation_counts if min_val <= c < max_val)
+                        if max_val == float('inf'):
+                            range_key = f"{min_val}+"
+                        else:
+                            range_key = f"{min_val}-{max_val-1}"
+                        citation_distribution[range_key] = count
+                
+                # Get trending topics
+                from collections import Counter
+                topic_counts = Counter(topics)
+                trending_topics = [{"topic": topic, "count": count} 
+                                 for topic, count in topic_counts.most_common(10)]
+                
+                analytics = {
+                    'papers_by_source': papers_by_source if papers_by_source else {'Database': basic_stats.get('papers', 0)},
+                    'papers_by_year': papers_by_year,
+                    'citation_distribution': citation_distribution,
+                    'trending_topics': trending_topics,
+                    'total_papers': len(papers),
+                    'total_citations': sum(citation_counts) if citation_counts else 0,
+                    'avg_citations': sum(citation_counts) / len(citation_counts) if citation_counts else 0
+                }
+                
+            except Exception as build_error:
+                logger.error(f"Error building analytics: {build_error}")
+                # Final fallback
+                basic_stats = db.get_stats() if hasattr(db, 'get_stats') else {}
+                analytics = {
+                    'papers_by_source': {'Database': basic_stats.get('papers', 0)},
+                    'papers_by_year': {},
+                    'citation_distribution': {},
+                    'trending_topics': [],
+                    'total_papers': basic_stats.get('papers', 0),
+                    'total_citations': 0,
+                    'avg_citations': 0
+                }
         
         return analytics
     except Exception as e:
         logger.error(f"Error getting analytics: {e}")
-        # Fallback to basic stats from database
-        try:
-            basic_stats = db.get_stats()
-            return {
-                'papers_by_source': {'Database': basic_stats.get('papers', 0)},
-                'papers_by_year': {},
-                'citation_distribution': {},
-                'trending_topics': []
-            }
-        except:
-            return {}
+        # Ultimate fallback
+        return {
+            'papers_by_source': {'Unknown': 0},
+            'papers_by_year': {},
+            'citation_distribution': {},
+            'trending_topics': [],
+            'total_papers': 0,
+            'total_citations': 0,
+            'avg_citations': 0
+        }
 
 def format_paper_card(paper):
     """Enhanced paper card formatting with modern design"""
@@ -995,47 +1423,45 @@ def format_paper_card(paper):
     # Create modern card with enhanced design
     card_html = f"""
     <div class="paper-card">
-        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: var(--spacing-md);">
-            <h4 style="color: var(--primary-700); margin: 0; font-weight: 600; line-height: 1.3; flex: 1;">
+        <div class="paper-header">
+            <h4 class="text-primary-700 m-0 flex-1" style="font-weight: 600; line-height: 1.3;">
                 {paper.title}
             </h4>
-            <div style="margin-left: var(--spacing-md); display: flex; gap: var(--spacing-xs);">
-                <span class="status-indicator status-success" style="font-size: var(--font-size-xs);">
+            <div class="ml-md flex-center">
+                <span class="status-indicator status-success btn-xs">
                     📊 {citations}
                 </span>
             </div>
         </div>
         
-        <div style="margin-bottom: var(--spacing-md);">
-            <p style="color: var(--gray-600); margin: 0; font-size: var(--font-size-sm); line-height: 1.4;">
+        <div class="mb-md">
+            <p class="author-info">
                 <strong>👥 Authors:</strong> {authors_str}
             </p>
-            <div style="display: flex; gap: var(--spacing-lg); margin-top: var(--spacing-xs);">
-                <span style="color: var(--gray-500); font-size: var(--font-size-sm);">
+            <div class="paper-meta">
+                <span class="paper-meta-item">
                     📅 {year}
                 </span>
-                <span style="color: var(--gray-500); font-size: var(--font-size-sm);">
+                <span class="paper-meta-item">
                     📖 {venue}
                 </span>
             </div>
         </div>
         
-        <p style="color: var(--gray-700); font-size: var(--font-size-sm); line-height: 1.5; margin-bottom: var(--spacing-md);">
+        <p class="paper-abstract">
             {abstract}
         </p>
         
-        <div style="display: flex; justify-content: space-between; align-items: center;">
-            <div style="display: flex; gap: var(--spacing-xs); flex-wrap: wrap;">
-                <span style="background: var(--primary-50); color: var(--primary-600); padding: var(--spacing-xs) var(--spacing-sm); 
-                             border-radius: var(--radius-md); font-size: var(--font-size-xs); font-weight: 500; border: 1px solid var(--primary-200);">
+        <div class="paper-actions">
+            <div class="paper-tags">
+                <span class="status-badge status-badge-primary">
                     🏷️ {topic}
                 </span>
-                <span style="background: var(--gray-50); color: var(--gray-600); padding: var(--spacing-xs) var(--spacing-sm); 
-                             border-radius: var(--radius-md); font-size: var(--font-size-xs); border: 1px solid var(--gray-200);">
+                <span class="status-badge status-badge-gray">
                     🔗 {paper.source}
                 </span>
             </div>
-            <button class="modern-button" style="padding: var(--spacing-xs) var(--spacing-sm); font-size: var(--font-size-xs);"
+            <button class="modern-button btn-xs"
                     onclick="window.open('{getattr(paper, 'url', '#')}', '_blank')">
                 📖 Read
             </button>
@@ -1051,8 +1477,8 @@ def create_metric_card(title, value, icon, trend=None, color="primary"):
         trend_color = "var(--success-500)" if trend > 0 else "var(--error-500)"
         trend_icon = "📈" if trend > 0 else "📉"
         trend_html = f"""
-        <div style="margin-top: var(--spacing-xs);">
-            <span style="color: {trend_color}; font-size: var(--font-size-sm); font-weight: 500;">
+        <div class="metric-trend">
+            <span class="metric-trend-text" style="color: {trend_color};">
                 {trend_icon} {abs(trend):.1f}% vs last month
             </span>
         </div>
@@ -1060,17 +1486,17 @@ def create_metric_card(title, value, icon, trend=None, color="primary"):
     
     return f"""
     <div class="metric-card">
-        <div style="display: flex; justify-content: space-between; align-items: center;">
+        <div class="metric-container">
             <div>
-                <div style="font-size: var(--font-size-3xl); font-weight: 700; margin-bottom: var(--spacing-xs);">
+                <div class="metric-value">
                     {value}
                 </div>
-                <div style="font-size: var(--font-size-sm); opacity: 0.9; font-weight: 500;">
+                <div class="metric-label">
                     {title}
                 </div>
                 {trend_html}
             </div>
-            <div style="font-size: 2.5rem; opacity: 0.8;">
+            <div class="icon-large">
                 {icon}
             </div>
         </div>
@@ -1087,13 +1513,39 @@ def progress_callback(step: int, description: str):
     }
 
 def show_loading_animation(message: str = "Processing..."):
-    """Show modern loading animation"""
+    """Show modern loading animation with skeleton screen"""
     return st.markdown(f"""
-    <div style="display: flex; align-items: center; justify-content: center; padding: var(--spacing-xl); color: var(--primary-600);">
-        <div class="loading-pulse" style="margin-right: var(--spacing-md); font-size: var(--font-size-xl);">
+    <div class="flex-center p-xl text-primary">
+        <div class="loading-pulse mr-md" style="font-size: var(--font-size-xl);">
             🔄
         </div>
         <span style="font-weight: 500;">{message}</span>
+    </div>
+    """, unsafe_allow_html=True)
+
+def show_skeleton_card():
+    """Show skeleton loading card for better perceived performance"""
+    return st.markdown("""
+    <div class="paper-card">
+        <div class="paper-header">
+            <div class="loading-skeleton" style="height: 20px; width: 70%; border-radius: var(--radius-sm);"></div>
+            <div class="loading-skeleton" style="height: 16px; width: 60px; border-radius: var(--radius-sm);"></div>
+        </div>
+        <div class="mb-md">
+            <div class="loading-skeleton" style="height: 14px; width: 50%; margin-bottom: var(--spacing-xs); border-radius: var(--radius-sm);"></div>
+            <div class="paper-meta">
+                <div class="loading-skeleton" style="height: 12px; width: 80px; border-radius: var(--radius-sm);"></div>
+                <div class="loading-skeleton" style="height: 12px; width: 120px; border-radius: var(--radius-sm);"></div>
+            </div>
+        </div>
+        <div class="loading-skeleton mb-md" style="height: 60px; width: 100%; border-radius: var(--radius-sm);"></div>
+        <div class="paper-actions">
+            <div class="paper-tags">
+                <div class="loading-skeleton" style="height: 24px; width: 80px; border-radius: var(--radius-md);"></div>
+                <div class="loading-skeleton" style="height: 24px; width: 100px; border-radius: var(--radius-md);"></div>
+            </div>
+            <div class="loading-skeleton" style="height: 28px; width: 60px; border-radius: var(--radius-lg);"></div>
+        </div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -1145,29 +1597,29 @@ def main():
                 padding: var(--spacing-lg); border-radius: var(--radius-xl); margin-bottom: var(--spacing-xl);
                 border: 1px solid var(--primary-200);">
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--spacing-md);">
-            <div style="text-align: center;">
+            <div class="text-center">
                 <div style="font-size: var(--font-size-2xl); font-weight: 700; color: var(--primary-600);">
                     📚 {stats.get('papers', 0)}
                 </div>
-                <div style="color: var(--gray-600); font-weight: 500;">Research Papers</div>
+                <div class="text-secondary-weight">Research Papers</div>
             </div>
-            <div style="text-align: center;">
+            <div class="text-center">
                 <div style="font-size: var(--font-size-2xl); font-weight: 700; color: var(--secondary-600);">
                     📝 {stats.get('notes', 0)}
                 </div>
-                <div style="color: var(--gray-600); font-weight: 500;">Research Notes</div>
+                <div class="text-secondary-weight">Research Notes</div>
             </div>
-            <div style="text-align: center;">
+            <div class="text-center">
                 <div style="font-size: var(--font-size-2xl); font-weight: 700; color: var(--success-600);">
                     🎯 {stats.get('themes', 0)}
                 </div>
-                <div style="color: var(--gray-600); font-weight: 500;">Key Themes</div>
+                <div class="text-secondary-weight">Key Themes</div>
             </div>
-            <div style="text-align: center;">
+            <div class="text-center">
                 <div style="font-size: var(--font-size-2xl); font-weight: 700; color: var(--warning-600);">
                     📖 {stats.get('citations', 0)}
                 </div>
-                <div style="color: var(--gray-600); font-weight: 500;">Citations</div>
+                <div class="text-secondary-weight">Citations</div>
             </div>
         </div>
         <div style="text-align: center; margin-top: var(--spacing-md); color: var(--gray-500); font-size: var(--font-size-sm);">
@@ -1432,22 +1884,47 @@ def main():
                     st.session_state.research_results = results
                     progress_bar.progress(1.0, text="✅ Research workflow completed!")
                 
-                if results['success']:
-                    # Success celebration
-                    st.balloons()
-                    st.success("🎉 Research workflow completed successfully!", icon="✅")
+                if results.get('success', False):
+                    # Check if we actually found papers
+                    stats = results.get('statistics', {})
+                    papers_found = stats.get('papers_found', 0)
                     
-                    # Enhanced results summary with modern cards
-                    st.markdown("### 📊 Research Summary & Insights")
+                    if papers_found > 0:
+                        # Success celebration
+                        st.balloons()
+                        st.success("🎉 Research workflow completed successfully!", icon="✅")
+                        
+                        # Enhanced results summary with modern cards
+                        st.markdown("### 📊 Research Summary & Insights")
+                    else:
+                        # Completed but no papers found
+                        st.warning("⚠️ Research workflow completed, but no papers were found for this topic.", icon="📋")
+                        st.markdown("""
+                        <div class="modern-card" style="background: linear-gradient(135deg, var(--warning-50) 0%, var(--primary-50) 100%); border: 2px solid var(--warning-300);">
+                            <h4 style="color: var(--warning-700); margin-bottom: var(--spacing-md);">
+                                🔍 No Papers Found - Try These Suggestions:
+                            </h4>
+                            <ul style="color: var(--gray-700); margin: 0;">
+                                <li><strong>Broaden your search terms</strong> - try more general keywords</li>
+                                <li><strong>Check spelling and terminology</strong> - ensure correct academic terms</li>
+                                <li><strong>Try alternative keywords</strong> - use synonyms or related concepts</li>
+                                <li><strong>Extend date range</strong> - include older publications</li>
+                                <li><strong>Reduce specificity</strong> - start with broader topics</li>
+                            </ul>
+                        </div>
+                        """, unsafe_allow_html=True)
+                        
+                        # Still show basic stats
+                        st.markdown("### 📊 Search Summary")
                     
-                    # Key metrics in modern cards
+                    # Key metrics in modern cards with safe access
                     metric_cols = st.columns(4)
-                    stats = results['statistics']
+                    stats = results.get('statistics', {})
                     
                     with metric_cols[0]:
                         st.markdown(create_metric_card(
                             "Papers Analyzed", 
-                            stats['papers_found'], 
+                            stats.get('papers_found', 0), 
                             "📚", 
                             color="primary"
                         ), unsafe_allow_html=True)
@@ -1455,7 +1932,7 @@ def main():
                     with metric_cols[1]:
                         st.markdown(create_metric_card(
                             "Research Notes", 
-                            stats['notes_extracted'], 
+                            stats.get('notes_extracted', 0), 
                             "📝", 
                             color="secondary"
                         ), unsafe_allow_html=True)
@@ -1463,7 +1940,7 @@ def main():
                     with metric_cols[2]:
                         st.markdown(create_metric_card(
                             "Key Themes", 
-                            stats['themes_identified'], 
+                            stats.get('themes_identified', 0), 
                             "🎯", 
                             color="success"
                         ), unsafe_allow_html=True)
@@ -1471,7 +1948,7 @@ def main():
                     with metric_cols[3]:
                         st.markdown(create_metric_card(
                             "Citations", 
-                            stats['citations_generated'], 
+                            stats.get('citations_generated', 0), 
                             "📖", 
                             color="warning"
                         ), unsafe_allow_html=True)
@@ -1479,10 +1956,15 @@ def main():
                     # Execution details
                     col_time, col_efficiency = st.columns(2)
                     with col_time:
-                        st.info(f"⏱️ **Total Execution Time**: {results['execution_time']}")
+                        st.info(f"⏱️ **Total Execution Time**: {results.get('execution_time', 'Unknown')}")
                     with col_efficiency:
-                        papers_per_minute = stats['papers_found'] / (time.time() - workflow_start_time) * 60
-                        st.info(f"⚡ **Processing Rate**: {papers_per_minute:.1f} papers/min")
+                        papers_found = stats.get('papers_found', 0)
+                        elapsed_time = time.time() - workflow_start_time
+                        if elapsed_time > 0 and papers_found > 0:
+                            papers_per_minute = papers_found / elapsed_time * 60
+                            st.info(f"⚡ **Processing Rate**: {papers_per_minute:.1f} papers/min")
+                        else:
+                            st.info("⚡ **Processing Rate**: N/A")
                     
                     # Draft preview with enhanced formatting
                     if 'draft' in results and results['draft']:
@@ -1543,6 +2025,11 @@ def main():
     
     # Tab 2: Enhanced AI Assistant
     with tab2:
+        # Check for auto-switch from Knowledge Base
+        if st.session_state.get('auto_switch_to_qa', False):
+            st.session_state.auto_switch_to_qa = False
+            st.info("💬 Question automatically prepared from Knowledge Base!", icon="🤖")
+        
         st.markdown("""
         <div class="qa-container">
             <h2 style="color: var(--primary-700); margin-bottom: var(--spacing-md); font-weight: 600;">
@@ -1873,7 +2360,9 @@ def main():
                             with paper_col1:
                                 if st.button(f"💬 Ask about this", key=f"ask_{i}"):
                                     st.session_state.qa_question = f"Tell me about the paper: {paper.title}"
-                                    st.switch_page("tab2")  # Switch to Q&A tab
+                                    st.session_state.auto_switch_to_qa = True
+                                    st.info("💬 Question prepared! Switch to the AI Assistant tab to see the answer.")
+                                    st.rerun()
                             
                             with paper_col2:
                                 if st.button(f"🔗 Similar Papers", key=f"similar_{i}"):
@@ -1930,7 +2419,7 @@ def main():
                     """, unsafe_allow_html=True)
         
         # Knowledge base statistics
-        if stats['papers'] > 0:
+        if stats.get('papers', 0) > 0:
             st.markdown("### 📊 Knowledge Base Statistics")
             
             col1, col2 = st.columns(2)
@@ -1984,7 +2473,7 @@ def main():
         </div>
         """, unsafe_allow_html=True)
         
-        if stats['papers'] > 0:
+        if stats.get('papers', 0) > 0:
             analytics = get_research_analytics()
             
             # Key metrics overview
@@ -1995,17 +2484,17 @@ def main():
             with metric_col1:
                 st.markdown(create_metric_card(
                     "Total Papers", 
-                    stats['papers'], 
+                    stats.get('papers', 0), 
                     "📚", 
                     trend=5.2
                 ), unsafe_allow_html=True)
             
             with metric_col2:
-                avg_citations = sum(analytics.get('citation_distribution', {0: 0}).values()) / max(len(analytics.get('citation_distribution', {0: 1})), 1)
+                avg_citations = analytics.get('avg_citations', 0)
                 st.markdown(create_metric_card(
                     "Avg Citations", 
-                    f"{avg_citations:.0f}", 
-                    "�", 
+                    f"{avg_citations:.1f}", 
+                    "⭐", 
                     trend=2.1
                 ), unsafe_allow_html=True)
             
@@ -2283,15 +2772,20 @@ def main():
             results = st.session_state.research_results
             
             # Success banner
+            # Get safe statistics with fallbacks
+            stats = results.get('statistics', {})
+            papers_found = stats.get('papers_found', 0)
+            status = "✅ Research Results Ready for Export" if papers_found > 0 else "⚠️ Research Completed (No Papers Found)"
+            
             st.markdown(f"""
             <div class="modern-card" style="background: linear-gradient(135deg, var(--success-50) 0%, var(--primary-50) 100%); border: 2px solid var(--success-300);">
                 <h3 style="color: var(--success-700); margin-bottom: var(--spacing-sm);">
-                    ✅ Research Results Ready for Export
+                    {status}
                 </h3>
                 <p style="color: var(--gray-700);">
-                    <strong>Topic:</strong> {results['research_topic']}<br>
+                    <strong>Topic:</strong> {results.get('research_topic', 'Unknown Topic')}<br>
                     <strong>Completed:</strong> {results.get('timestamp', 'Recently')}<br>
-                    <strong>Papers Analyzed:</strong> {results['statistics']['papers_found']}
+                    <strong>Papers Analyzed:</strong> {papers_found}
                 </p>
             </div>
             """, unsafe_allow_html=True)
@@ -2311,7 +2805,11 @@ def main():
                 """, unsafe_allow_html=True)
                 
                 # Paper export options
-                available_formats = st.session_state.research_crew.get_available_export_formats()
+                try:
+                    available_formats = st.session_state.research_crew.get_available_export_formats()
+                except (AttributeError, TypeError):
+                    # Fallback to default formats if method doesn't exist
+                    available_formats = ["pdf", "docx", "txt", "markdown", "html"]
                 
                 paper_format = st.selectbox(
                     "📄 Paper Format",
@@ -2346,11 +2844,62 @@ def main():
                         
                         # Export paper
                         output_path = output_dir / paper_filename
-                        success = export_manager.export_draft(
-                            results['draft'],
-                            str(output_path),
-                            paper_format
-                        )
+                        
+                        try:
+                            # Try using export_manager
+                            success = export_manager.export_draft(
+                                results['draft'],
+                                str(output_path),
+                                paper_format
+                            )
+                        except (AttributeError, NameError):
+                            # Fallback export implementation
+                            try:
+                                success = False
+                                file_path = f"{output_path}.{paper_format}"
+                                
+                                # Get draft content
+                                draft_content = results.get('draft', 'No content available')
+                                
+                                if paper_format.lower() == 'txt':
+                                    with open(file_path, 'w', encoding='utf-8') as f:
+                                        f.write(draft_content)
+                                    success = True
+                                elif paper_format.lower() == 'markdown':
+                                    with open(f"{output_path}.md", 'w', encoding='utf-8') as f:
+                                        f.write(draft_content)
+                                    success = True
+                                elif paper_format.lower() == 'html':
+                                    html_content = f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <title>{results.get('research_topic', 'Research Paper')}</title>
+    <meta charset="UTF-8">
+    <style>
+        body {{ font-family: Arial, sans-serif; margin: 40px; line-height: 1.6; }}
+        h1, h2, h3 {{ color: #333; }}
+        pre {{ background: #f4f4f4; padding: 10px; border-radius: 5px; }}
+    </style>
+</head>
+<body>
+    <h1>{results.get('research_topic', 'Research Paper')}</h1>
+    <pre>{draft_content}</pre>
+</body>
+</html>
+                                    """
+                                    with open(f"{output_path}.html", 'w', encoding='utf-8') as f:
+                                        f.write(html_content)
+                                    success = True
+                                else:
+                                    # Default to text format
+                                    with open(f"{output_path}.txt", 'w', encoding='utf-8') as f:
+                                        f.write(draft_content)
+                                    success = True
+                                    
+                            except Exception as fallback_error:
+                                st.error(f"Export failed: {fallback_error}")
+                                success = False
                         
                         progress_bar.progress(1.0, text="Export completed!")
                         
@@ -2414,12 +2963,41 @@ def main():
                         
                         # Export bibliography
                         output_path = output_dir / bib_filename
-                        success = export_manager.export_bibliography(
-                            results.get('bibliography', ''),
-                            results.get('papers', []),
-                            str(output_path),
-                            bib_format
-                        )
+                        
+                        try:
+                            # Get papers/references from results
+                            papers = results.get('papers', [])
+                            bibliography = results.get('bibliography', [])
+                            
+                            # Use papers if available, otherwise bibliography
+                            references = papers if papers else bibliography
+                            
+                            if EXPORT_MANAGER_AVAILABLE and export_manager:
+                                success = export_manager.export_bibliography(
+                                    references,
+                                    str(output_path),
+                                    bib_format
+                                )
+                            else:
+                                # Fallback export
+                                success = False
+                                file_path = f"{output_path}.{bib_format}"
+                                
+                                if bib_format == 'txt':
+                                    content = "BIBLIOGRAPHY\n" + "="*50 + "\n\n"
+                                    for i, ref in enumerate(references, 1):
+                                        title = getattr(ref, 'title', f'Reference {i}')
+                                        authors = getattr(ref, 'authors', ['Unknown'])
+                                        year = getattr(ref, 'year', 'Unknown')
+                                        content += f"{i}. {title}\n   Authors: {', '.join(authors) if isinstance(authors, list) else authors}\n   Year: {year}\n\n"
+                                    
+                                    with open(file_path, 'w', encoding='utf-8') as f:
+                                        f.write(content)
+                                    success = True
+                                
+                        except Exception as export_error:
+                            st.error(f"Bibliography export failed: {export_error}")
+                            success = False
                         
                         progress_bar.progress(1.0, text="Bibliography exported!")
                         
@@ -2484,20 +3062,43 @@ def main():
                         progress_bar.progress((i + 1) / total_steps, text=f"Exporting {fmt} format...")
                         
                         if fmt.lower() in available_formats:
-                            draft_path = output_dir / f"research_paper"
-                            if export_manager.export_draft(results['draft'], str(draft_path), fmt.lower()):
-                                exported_files.append(f"research_paper.{fmt.lower()}")
+                            try:
+                                draft_path = output_dir / f"research_paper"
+                                if EXPORT_MANAGER_AVAILABLE and export_manager:
+                                    if export_manager.export_draft(results.get('draft', ''), str(draft_path), fmt.lower()):
+                                        exported_files.append(f"research_paper.{fmt.lower()}")
+                                else:
+                                    # Fallback export
+                                    file_path = f"{draft_path}.{fmt.lower()}"
+                                    with open(file_path, 'w', encoding='utf-8') as f:
+                                        f.write(results.get('draft', 'No content available'))
+                                    exported_files.append(f"research_paper.{fmt.lower()}")
+                            except Exception as export_error:
+                                st.warning(f"Failed to export {fmt} format: {export_error}")
                     
                     # Export bibliography
                     progress_bar.progress((len(package_formats) + 1) / total_steps, text="Exporting bibliography...")
-                    bib_path = output_dir / "bibliography"
-                    if export_manager.export_bibliography(
-                        results.get('bibliography', ''),
-                        results.get('papers', []),
-                        str(bib_path),
-                        'txt'
-                    ):
-                        exported_files.append("bibliography.txt")
+                    try:
+                        bib_path = output_dir / "bibliography"
+                        
+                        # Get references
+                        papers = results.get('papers', [])
+                        bibliography = results.get('bibliography', [])
+                        references = papers if papers else bibliography
+                        
+                        if EXPORT_MANAGER_AVAILABLE and export_manager:
+                            if export_manager.export_bibliography(references, str(bib_path), 'txt'):
+                                exported_files.append("bibliography.txt")
+                        else:
+                            # Fallback bibliography export
+                            with open(f"{bib_path}.txt", 'w', encoding='utf-8') as f:
+                                f.write("BIBLIOGRAPHY\n" + "="*50 + "\n\n")
+                                for i, ref in enumerate(references[:10], 1):  # Limit to first 10
+                                    title = getattr(ref, 'title', f'Reference {i}')
+                                    f.write(f"{i}. {title}\n\n")
+                            exported_files.append("bibliography.txt")
+                    except Exception as bib_error:
+                        st.warning(f"Failed to export bibliography: {bib_error}")
                     
                     # Export raw data
                     progress_bar.progress((len(package_formats) + 2) / total_steps, text="Exporting raw data...")
@@ -2510,15 +3111,16 @@ def main():
                     progress_bar.progress((len(package_formats) + 3) / total_steps, text="Creating summary...")
                     summary_path = output_dir / "research_summary.md"
                     with open(summary_path, 'w', encoding='utf-8') as f:
-                        f.write(f"""# Research Summary: {results['research_topic']}
+                        stats = results.get('statistics', {})
+                        f.write(f"""# Research Summary: {results.get('research_topic', 'Unknown Topic')}
 
 ## Overview
-- **Research Topic**: {results['research_topic']}
-- **Papers Analyzed**: {results['statistics']['papers_found']}
-- **Notes Extracted**: {results['statistics']['notes_extracted']}
-- **Themes Identified**: {results['statistics']['themes_identified']}
-- **Citations Generated**: {results['statistics']['citations_generated']}
-- **Execution Time**: {results['execution_time']}
+- **Research Topic**: {results.get('research_topic', 'Unknown Topic')}
+- **Papers Analyzed**: {stats.get('papers_found', 0)}
+- **Notes Extracted**: {stats.get('notes_extracted', 0)}
+- **Themes Identified**: {stats.get('themes_identified', 0)}
+- **Citations Generated**: {stats.get('citations_generated', 0)}
+- **Execution Time**: {results.get('execution_time', 'Unknown')}
 - **Export Date**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 
 ## Files in this Package
@@ -2622,7 +3224,7 @@ Powered by AI for comprehensive research workflows
             🤖 AI-Powered Research Platform | 
             📊 {stats.get('papers', 0)} papers in knowledge base
         </div>
-        <div style="margin-top: var(--spacing-xs); color: var(--gray-400); font-size: var(--font-size-xs);">
+        <div class="mt-xs text-muted" style="font-size: var(--font-size-xs);">
             Built with ❤️ for researchers | Version 2.0 Production Ready
         </div>
     </div>
