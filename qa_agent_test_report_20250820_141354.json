@@ -1,0 +1,174 @@
+{
+  "start_time": "2025-08-20T14:13:46.377143",
+  "tests_run": 21,
+  "tests_passed": 14,
+  "tests_failed": 7,
+  "performance_metrics": {
+    "avg_response_time": 0.10607798894246419,
+    "max_response_time": 0.10625100135803223,
+    "total_questions_tested": 3
+  },
+  "detailed_results": [
+    {
+      "test": "database_get_papers",
+      "papers_found": 13,
+      "search_time": 0.0029993057250976562,
+      "success": true
+    },
+    {
+      "test": "answer_accuracy",
+      "question": "What are the latest trends in machine learning?",
+      "answer_length": 329,
+      "confidence": 0.2,
+      "response_time": 0.12001609802246094,
+      "quality_score": 0.36,
+      "source_papers": 0,
+      "success": true
+    },
+    {
+      "test": "answer_accuracy",
+      "question": "How do neural networks work?",
+      "answer_length": 310,
+      "confidence": 0.2,
+      "response_time": 0.10743904113769531,
+      "quality_score": 0.36,
+      "source_papers": 0,
+      "success": true
+    },
+    {
+      "test": "answer_accuracy",
+      "question": "What is the impact of AI on healthcare?",
+      "answer_length": 321,
+      "confidence": 0.2,
+      "response_time": 0.10659146308898926,
+      "quality_score": 0.36,
+      "source_papers": 0,
+      "success": true
+    },
+    {
+      "test": "answer_accuracy",
+      "question": "Explain quantum computing applications",
+      "answer_length": 320,
+      "confidence": 0.2,
+      "response_time": 0.10552310943603516,
+      "quality_score": 0.36,
+      "source_papers": 0,
+      "success": true
+    },
+    {
+      "test": "answer_accuracy",
+      "question": "What are the benefits of renewable energy?",
+      "answer_length": 249,
+      "confidence": 0.0,
+      "response_time": 0.0063936710357666016,
+      "quality_score": 0.3,
+      "source_papers": 0,
+      "success": true
+    },
+    {
+      "test": "async_vs_sync",
+      "sync_time": 0.10656476020812988,
+      "async_time": 0.10456991195678711,
+      "sync_answer_length": 324,
+      "async_answer_length": 324,
+      "answers_similar": true
+    },
+    {
+      "test": "caching",
+      "first_call_time": 0.11521577835083008,
+      "second_call_time": 0.1061406135559082,
+      "cache_hit_rate": 0.0,
+      "answers_identical": true
+    },
+    {
+      "test": "edge_case",
+      "question": "",
+      "handled_gracefully": true,
+      "answer_provided": true,
+      "error_occurred": false
+    },
+    {
+      "test": "edge_case",
+      "question": "?",
+      "handled_gracefully": true,
+      "answer_provided": true,
+      "error_occurred": false
+    },
+    {
+      "test": "edge_case",
+      "question": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa...",
+      "handled_gracefully": true,
+      "answer_provided": true,
+      "error_occurred": false
+    },
+    {
+      "test": "edge_case",
+      "question": "What is \u2211\u220f\u2206\u2207\u2202\u222b in mathematics?",
+      "handled_gracefully": true,
+      "answer_provided": true,
+      "error_occurred": false
+    },
+    {
+      "test": "edge_case",
+      "question": "Tell me about xyzabc123nonexistent",
+      "handled_gracefully": true,
+      "answer_provided": true,
+      "error_occurred": false
+    },
+    {
+      "test": "citation_generation",
+      "source_papers_count": 0,
+      "papers_have_ids": true,
+      "papers_have_titles": true,
+      "papers_have_authors": true
+    },
+    {
+      "test": "question_type",
+      "expected_type": "factual",
+      "detected_type": "unknown",
+      "question": "What is machine learning?",
+      "answer_provided": true,
+      "confidence": 0.2
+    },
+    {
+      "test": "question_type",
+      "expected_type": "comparative",
+      "detected_type": "unknown",
+      "question": "Compare supervised and unsupervised learning",
+      "answer_provided": true,
+      "confidence": 0.2
+    },
+    {
+      "test": "question_type",
+      "expected_type": "analytical",
+      "detected_type": "unknown",
+      "question": "Why is deep learning effective for image recognition?",
+      "answer_provided": true,
+      "confidence": 0.2
+    },
+    {
+      "test": "question_type",
+      "expected_type": "procedural",
+      "detected_type": "unknown",
+      "question": "How do you train a neural network?",
+      "answer_provided": true,
+      "confidence": 0.2
+    },
+    {
+      "test": "error_handling",
+      "scenario": "empty_question",
+      "handled_gracefully": true,
+      "fallback_provided": true
+    },
+    {
+      "test": "memory_usage",
+      "initial_memory_mb": 597.44140625,
+      "final_memory_mb": 597.46875,
+      "memory_increase_mb": 0.02734375,
+      "questions_processed": 15
+    }
+  ],
+  "errors": [],
+  "end_time": "2025-08-20T14:13:54.628155",
+  "success_rate": 66.66666666666666
+}
