@@ -113,7 +113,7 @@ class AcademicResearchLauncher:
         
         return True
     
-    def run_health_check(self):
+    def run_health_check(self, auto_open=True):
         """Run the health check dashboard"""
         print("\n🏥 Launching Health Check Dashboard...")
         
@@ -123,23 +123,27 @@ class AcademicResearchLauncher:
                 sys.executable, "-m", "streamlit", "run",
                 str(self.project_root / "utils" / "dashboard_health_check.py"),
                 "--server.port", str(port),
-                "--server.headless", "false"
+                "--server.headless", "false",
+                "--server.runOnSave", "false",
+                "--browser.serverAddress", "localhost"
             ]
             
             print(f"🌐 Health Check URL: http://localhost:{port}")
             process = subprocess.Popen(cmd, cwd=self.project_root)
             self.processes.append(process)
             
-            # Wait a bit and open browser
-            time.sleep(3)
-            webbrowser.open(f"http://localhost:{port}")
+            # Only open browser if requested
+            if auto_open:
+                time.sleep(3)
+                print("🌐 Opening health check in browser...")
+                webbrowser.open(f"http://localhost:{port}")
             
             return process
         except Exception as e:
             print(f"❌ Failed to launch health check: {e}")
             return None
     
-    def launch_dashboard(self, port=None):
+    def launch_dashboard(self, port=None, auto_open=True):
         """Launch the main dashboard"""
         print("\n🚀 Launching Academic Research Assistant Dashboard...")
         
@@ -151,7 +155,9 @@ class AcademicResearchLauncher:
                 sys.executable, "-m", "streamlit", "run",
                 str(self.project_root / "integrated_dashboard.py"),
                 "--server.port", str(port),
-                "--server.headless", "false"
+                "--server.headless", "false",
+                "--server.runOnSave", "false",
+                "--browser.serverAddress", "localhost"
             ]
             
             print(f"🌐 Dashboard URL: http://localhost:{port}")
@@ -161,9 +167,11 @@ class AcademicResearchLauncher:
             process = subprocess.Popen(cmd, cwd=self.project_root)
             self.processes.append(process)
             
-            # Wait a bit and open browser
-            time.sleep(3)
-            webbrowser.open(f"http://localhost:{port}")
+            # Only open browser if requested and wait a bit
+            if auto_open:
+                time.sleep(3)
+                print("🌐 Opening dashboard in browser...")
+                webbrowser.open(f"http://localhost:{port}")
             
             return process
         except Exception as e:
@@ -222,7 +230,7 @@ class AcademicResearchLauncher:
         self.processes.clear()
         print("✅ All services stopped")
     
-    def run_full_startup(self):
+    def run_full_startup(self, auto_open=True):
         """Run complete startup sequence"""
         self.print_banner()
         
@@ -242,13 +250,14 @@ class AcademicResearchLauncher:
         print("\n✅ All pre-flight checks passed!")
         print("\n🚀 Launching dashboard...")
         
-        dashboard_process = self.launch_dashboard()
+        dashboard_process = self.launch_dashboard(auto_open=auto_open)
         if dashboard_process:
             print("\n🎉 Academic Research Assistant is ready!")
             print("\n📋 Available Commands:")
             print("  • Ctrl+C - Stop the dashboard")
             print("  • python launch.py --health - Run health check")
             print("  • python launch.py --status - Check system status")
+            print("  • python launch.py --no-browser - Launch without opening browser")
             
             try:
                 dashboard_process.wait()
@@ -265,12 +274,14 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
             epilog=(
                 "Examples:\n"
-                "  python launch.py                    # Launch main dashboard\n"
-                "  python launch.py --health           # Run health check\n"
+                "  python launch.py                    # Launch main dashboard (one tab)\n"
+                "  python launch.py --no-browser       # Launch without opening browser\n"
+                "  python launch.py --health           # Run health check only\n"
                 "  python launch.py --config           # Validate configuration only\n"
                 "  python launch.py --setup            # Setup environment\n"
                 "  python launch.py --status           # Check system status\n"
-                "  python launch.py --stop             # Stop all services"
+                "  python launch.py --stop             # Stop all services\n"
+                "  python launch.py --port 8080        # Use custom port"
             )
     )
     
@@ -280,6 +291,7 @@ def main():
     parser.add_argument('--status', action='store_true', help='Check system status')
     parser.add_argument('--stop', action='store_true', help='Stop all services')
     parser.add_argument('--port', type=int, help='Custom port for dashboard')
+    parser.add_argument('--no-browser', action='store_true', help='Don\'t automatically open browser')
     
     args = parser.parse_args()
     launcher = AcademicResearchLauncher()
@@ -294,7 +306,7 @@ def main():
         elif args.health:
             launcher.print_banner()
             if launcher.check_dependencies() and launcher.validate_configuration():
-                process = launcher.run_health_check()
+                process = launcher.run_health_check(auto_open=not args.no_browser)
                 if process:
                     try:
                         process.wait()
@@ -307,8 +319,8 @@ def main():
             launcher.print_banner()
             launcher.stop_all_services()
         else:
-            # Default: Full startup
-            launcher.run_full_startup()
+            # Default: Full startup (main dashboard only)
+            launcher.run_full_startup(auto_open=not args.no_browser)
             
     except KeyboardInterrupt:
         print("\n\n🛑 Interrupted by user")

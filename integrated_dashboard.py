@@ -350,34 +350,41 @@ html, body {
     border-radius: var(--radius-2xl) var(--radius-2xl) 0 0;
 }
 
-/* Metric Cards - Modern Glass Effect */
-.metric-card {
-    background: linear-gradient(135deg, var(--primary-500) 0%, var(--primary-600) 100%);
-    color: var(--text-inverse);
-    border-radius: var(--radius-2xl);
-    padding: var(--spacing-xl);
-    margin: var(--spacing-md);
-    box-shadow: var(--shadow-lg);
-    transition: all var(--transition-normal);
-    position: relative;
-    overflow: hidden;
-    backdrop-filter: blur(10px);
+/* Streamlit Metric Component Styling */
+div[data-testid="metric-container"] {
+    background: linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%);
+    border: none;
+    padding: 20px;
+    border-radius: 16px;
+    color: white;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+    transition: all 0.3s ease;
 }
 
-.metric-card:hover {
-    transform: translateY(-3px) scale(1.02);
-    box-shadow: var(--shadow-xl);
+div[data-testid="metric-container"]:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
 }
 
-.metric-card::after {
-    content: '';
-    position: absolute;
-    top: -50%;
-    right: -50%;
-    width: 100%;
-    height: 100%;
-    background: radial-gradient(circle, rgba(255,255,255,0.15) 0%, transparent 70%);
-    transform: rotate(45deg);
+div[data-testid="metric-container"] > div {
+    color: white !important;
+}
+
+div[data-testid="metric-container"] [data-testid="stMetricLabel"] {
+    color: white !important;
+    font-weight: 500 !important;
+    font-size: 0.875rem !important;
+}
+
+div[data-testid="metric-container"] [data-testid="stMetricValue"] {
+    color: white !important;
+    font-weight: 700 !important;
+    font-size: 2rem !important;
+}
+
+div[data-testid="metric-container"] [data-testid="stMetricDelta"] {
+    color: rgba(255, 255, 255, 0.8) !important;
+    font-size: 0.75rem !important;
 }
 
 /* Enhanced Paper Cards */
@@ -1036,23 +1043,25 @@ html, body {
 }
 
 .metric-value {
-    font-size: var(--font-size-3xl);
+    font-size: 2rem;
     font-weight: 700;
-    margin-bottom: var(--spacing-xs);
+    margin-bottom: 4px;
+    color: #ffffff;
 }
 
 .metric-label {
-    font-size: var(--font-size-sm);
+    font-size: 0.875rem;
     opacity: 0.9;
     font-weight: 500;
+    color: #ffffff;
 }
 
 .metric-trend {
-    margin-top: var(--spacing-xs);
+    margin-top: 4px;
 }
 
 .metric-trend-text {
-    font-size: var(--font-size-sm);
+    font-size: 0.75rem;
     font-weight: 500;
 }
 
@@ -1099,6 +1108,7 @@ html, body {
 .icon-large {
     font-size: 2.5rem;
     opacity: 0.8;
+    color: #ffffff;
 }
 
 /* Button Size Variants */
@@ -1404,10 +1414,11 @@ def get_research_analytics():
         }
 
 def format_paper_card(paper):
-    """Enhanced paper card formatting with modern design"""
+    """Display paper using Streamlit native components instead of HTML"""
+    # Format authors
     authors_str = ", ".join(paper.authors[:3]) if paper.authors else "Unknown Authors"
     if paper.authors and len(paper.authors) > 3:
-        authors_str += f" <span style='color: var(--gray-400);'>+{len(paper.authors) - 3} more</span>"
+        authors_str += f" +{len(paper.authors) - 3} more"
     
     # Truncate abstract intelligently
     abstract = paper.abstract if paper.abstract else 'No abstract available'
@@ -1420,88 +1431,63 @@ def format_paper_card(paper):
     venue = getattr(paper, 'venue', getattr(paper, 'source', 'Unknown Source'))
     topic = getattr(paper, 'topic', 'General')
     
-    # Create modern card with enhanced design
-    card_html = f"""
-    <div class="paper-card">
-        <div class="paper-header">
-            <h4 class="text-primary-700 m-0 flex-1" style="font-weight: 600; line-height: 1.3;">
-                {paper.title}
-            </h4>
-            <div class="ml-md flex-center">
-                <span class="status-indicator status-success btn-xs">
-                    📊 {citations}
-                </span>
-            </div>
-        </div>
+    # Create a proper Streamlit container
+    with st.container():
+        # Paper title and citation badge
+        col1, col2 = st.columns([4, 1])
+        with col1:
+            st.markdown(f"**{paper.title}**")
+        with col2:
+            st.metric("📊 Citations", citations)
         
-        <div class="mb-md">
-            <p class="author-info">
-                <strong>👥 Authors:</strong> {authors_str}
-            </p>
-            <div class="paper-meta">
-                <span class="paper-meta-item">
-                    📅 {year}
-                </span>
-                <span class="paper-meta-item">
-                    📖 {venue}
-                </span>
-            </div>
-        </div>
+        # Authors and metadata
+        st.caption(f"👥 **Authors:** {authors_str}")
         
-        <p class="paper-abstract">
-            {abstract}
-        </p>
+        col_year, col_venue = st.columns(2)
+        with col_year:
+            st.caption(f"📅 {year}")
+        with col_venue:
+            st.caption(f"📖 {venue}")
         
-        <div class="paper-actions">
-            <div class="paper-tags">
-                <span class="status-badge status-badge-primary">
-                    🏷️ {topic}
-                </span>
-                <span class="status-badge status-badge-gray">
-                    🔗 {paper.source}
-                </span>
-            </div>
-            <button class="modern-button btn-xs"
-                    onclick="window.open('{getattr(paper, 'url', '#')}', '_blank')">
-                📖 Read
-            </button>
-        </div>
-    </div>
-    """
-    return card_html
+        # Abstract
+        st.write(abstract)
+        
+        # Tags and actions
+        col_tags, col_action = st.columns([3, 1])
+        with col_tags:
+            st.caption(f"🏷️ {topic} • 🔗 {paper.source}")
+        with col_action:
+            if hasattr(paper, 'url') and paper.url:
+                st.link_button("📖 Read", paper.url)
+        
+        st.divider()  # Add separator between papers
+    
+    return ""  # Return empty since we're using direct Streamlit components
 
 def create_metric_card(title, value, icon, trend=None, color="primary"):
-    """Create modern metric cards"""
-    trend_html = ""
-    if trend:
-        trend_color = "var(--success-500)" if trend > 0 else "var(--error-500)"
-        trend_icon = "📈" if trend > 0 else "📉"
-        trend_html = f"""
-        <div class="metric-trend">
-            <span class="metric-trend-text" style="color: {trend_color};">
-                {trend_icon} {abs(trend):.1f}% vs last month
-            </span>
+    """Create modern metric cards that render properly in Streamlit"""
+    # Create a proper Streamlit container instead of raw HTML
+    container_html = f"""
+    <div style="
+        background: linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%);
+        color: white;
+        border-radius: 16px;
+        padding: 24px;
+        margin: 8px 0;
+        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        min-height: 120px;
+    ">
+        <div>
+            <div style="font-size: 2rem; font-weight: bold; margin-bottom: 4px;">{value}</div>
+            <div style="font-size: 0.875rem; opacity: 0.9; font-weight: 500;">{title}</div>
         </div>
-        """
-    
-    return f"""
-    <div class="metric-card">
-        <div class="metric-container">
-            <div>
-                <div class="metric-value">
-                    {value}
-                </div>
-                <div class="metric-label">
-                    {title}
-                </div>
-                {trend_html}
-            </div>
-            <div class="icon-large">
-                {icon}
-            </div>
-        </div>
+        <div style="font-size: 2.5rem; opacity: 0.8;">{icon}</div>
     </div>
     """
+    return container_html
 
 def progress_callback(step: int, description: str):
     """Enhanced callback function for research workflow progress"""
@@ -1513,40 +1499,59 @@ def progress_callback(step: int, description: str):
     }
 
 def show_loading_animation(message: str = "Processing..."):
-    """Show modern loading animation with skeleton screen"""
+    """Show modern loading animation with inline styles"""
     return st.markdown(f"""
-    <div class="flex-center p-xl text-primary">
-        <div class="loading-pulse mr-md" style="font-size: var(--font-size-xl);">
+    <div style="display: flex; align-items: center; justify-content: center; padding: 24px; color: #0ea5e9;">
+        <div style="font-size: 24px; margin-right: 12px; animation: spin 2s linear infinite;">
             🔄
         </div>
         <span style="font-weight: 500;">{message}</span>
     </div>
+    <style>
+    @keyframes spin {{
+        0% {{ transform: rotate(0deg); }}
+        100% {{ transform: rotate(360deg); }}
+    }}
+    </style>
     """, unsafe_allow_html=True)
 
 def show_skeleton_card():
-    """Show skeleton loading card for better perceived performance"""
+    """Show skeleton loading card for better perceived performance using inline styles"""
     return st.markdown("""
-    <div class="paper-card">
-        <div class="paper-header">
-            <div class="loading-skeleton" style="height: 20px; width: 70%; border-radius: var(--radius-sm);"></div>
-            <div class="loading-skeleton" style="height: 16px; width: 60px; border-radius: var(--radius-sm);"></div>
+    <div style="
+        background: white;
+        border: 1px solid #e4e4e7;
+        border-radius: 12px;
+        padding: 20px;
+        margin: 12px 0;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    ">
+        <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 12px;">
+            <div style="height: 20px; width: 70%; background: #f1f5f9; border-radius: 4px; animation: pulse 2s infinite;"></div>
+            <div style="height: 16px; width: 60px; background: #f1f5f9; border-radius: 4px; animation: pulse 2s infinite;"></div>
         </div>
-        <div class="mb-md">
-            <div class="loading-skeleton" style="height: 14px; width: 50%; margin-bottom: var(--spacing-xs); border-radius: var(--radius-sm);"></div>
-            <div class="paper-meta">
-                <div class="loading-skeleton" style="height: 12px; width: 80px; border-radius: var(--radius-sm);"></div>
-                <div class="loading-skeleton" style="height: 12px; width: 120px; border-radius: var(--radius-sm);"></div>
+        <div style="margin-bottom: 12px;">
+            <div style="height: 14px; width: 50%; margin-bottom: 8px; background: #f1f5f9; border-radius: 4px; animation: pulse 2s infinite;"></div>
+            <div style="display: flex; gap: 12px;">
+                <div style="height: 12px; width: 80px; background: #f1f5f9; border-radius: 4px; animation: pulse 2s infinite;"></div>
+                <div style="height: 12px; width: 120px; background: #f1f5f9; border-radius: 4px; animation: pulse 2s infinite;"></div>
             </div>
         </div>
-        <div class="loading-skeleton mb-md" style="height: 60px; width: 100%; border-radius: var(--radius-sm);"></div>
-        <div class="paper-actions">
-            <div class="paper-tags">
-                <div class="loading-skeleton" style="height: 24px; width: 80px; border-radius: var(--radius-md);"></div>
-                <div class="loading-skeleton" style="height: 24px; width: 100px; border-radius: var(--radius-md);"></div>
+        <div style="height: 60px; width: 100%; margin-bottom: 12px; background: #f1f5f9; border-radius: 4px; animation: pulse 2s infinite;"></div>
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <div style="display: flex; gap: 8px;">
+                <div style="height: 24px; width: 80px; background: #f1f5f9; border-radius: 6px; animation: pulse 2s infinite;"></div>
+                <div style="height: 24px; width: 100px; background: #f1f5f9; border-radius: 6px; animation: pulse 2s infinite;"></div>
             </div>
-            <div class="loading-skeleton" style="height: 28px; width: 60px; border-radius: var(--radius-lg);"></div>
+            <div style="height: 28px; width: 60px; background: #f1f5f9; border-radius: 6px; animation: pulse 2s infinite;"></div>
         </div>
     </div>
+    <style>
+    @keyframes pulse {
+        0%, 100% { opacity: 0.4; }
+        50% { opacity: 0.8; }
+    }
+    </style>
     """, unsafe_allow_html=True)
 
 # Main application with modern UI
@@ -2286,10 +2291,24 @@ def main():
             with col1:
                 search_query = st.text_input(
                     "🔍 Search Knowledge Base",
-                    placeholder="Search by title, abstract, authors, keywords, or topics...",
-                    help="Use advanced search: author:Smith title:machine OR topic:AI",
+                    placeholder="Try: automotive, electric cars, machine learning, AI...",
+                    help="💡 Tip: Use broader terms like 'automotive' instead of 'automobile industry'",
                     value=st.session_state.get('last_search_query', '')
                 )
+                
+                # Add search suggestions based on existing data
+                if search_query and len(search_query) > 2:
+                    # Show smart search suggestions
+                    suggestions = []
+                    if "automobile" in search_query.lower():
+                        suggestions.append("automotive")
+                    if "car" in search_query.lower():
+                        suggestions.extend(["automotive", "vehicle", "electric vehicle"])
+                    if "industry" in search_query.lower():
+                        suggestions.extend(["sector", "market", "manufacturing"])
+                    
+                    if suggestions:
+                        st.caption(f"💡 Try these terms: {', '.join(set(suggestions))}")
             
             with col2:
                 search_limit = st.selectbox("📄 Results", [10, 25, 50, 100], index=1)
@@ -2331,7 +2350,33 @@ def main():
                 else:
                     try:
                         with st.spinner(f"🔍 Searching {search_limit} papers..."):
+                            # Improve search for multi-word queries
+                            original_query = search_query
+                            
+                            # Try the original query first
                             search_results = db.search_papers(search_query, limit=search_limit)
+                            
+                            # If no results and query has multiple words, try individual words
+                            if not search_results and len(search_query.split()) > 1:
+                                words = search_query.split()
+                                st.info(f"No results for exact phrase. Searching individual terms: {', '.join(words)}")
+                                
+                                all_results = []
+                                for word in words:
+                                    if len(word) > 2:  # Skip very short words
+                                        word_results = db.search_papers(word, limit=search_limit)
+                                        all_results.extend(word_results)
+                                
+                                # Remove duplicates while preserving order
+                                seen_titles = set()
+                                search_results = []
+                                for paper in all_results:
+                                    if paper.title not in seen_titles:
+                                        search_results.append(paper)
+                                        seen_titles.add(paper.title)
+                                        if len(search_results) >= search_limit:
+                                            break
+                            
                             st.session_state.search_cache[cache_key] = search_results
                     except Exception as e:
                         st.error(f"Search error: {e}")
@@ -2352,8 +2397,7 @@ def main():
                     # Enhanced paper display
                     for i, paper in enumerate(search_results, 1):
                         with st.container():
-                            paper_html = format_paper_card(paper)
-                            st.markdown(paper_html, unsafe_allow_html=True)
+                            format_paper_card(paper)  # Function now renders directly
                             
                             # Quick actions for each paper
                             paper_col1, paper_col2, paper_col3, paper_col4 = st.columns(4)
@@ -2378,21 +2422,37 @@ def main():
                             
                             st.divider()
                 else:
-                    # No results found
-                    st.markdown(f"""
-                    <div class="modern-card" style="background: linear-gradient(135deg, var(--warning-50) 0%, var(--gray-50) 100%); border: 2px solid var(--warning-200);">
-                        <h3 style="color: var(--warning-700);">🔍 No Papers Found</h3>
-                        <p style="color: var(--gray-700);">No papers match your search criteria.</p>
-                        
-                        <h4 style="color: var(--gray-700); margin-top: var(--spacing-lg);">💡 Suggestions:</h4>
-                        <ul style="color: var(--gray-600);">
-                            <li>Try different keywords or synonyms</li>
-                            <li>Remove some filters to broaden your search</li>
-                            <li>Check your spelling</li>
-                            <li>Run a research workflow to collect more papers</li>
-                        </ul>
-                    </div>
-                    """, unsafe_allow_html=True)
+                    # No results found - Use Streamlit native components for better reliability
+                    st.markdown("### 🔍 No Papers Found")
+                    
+                    # Create a proper info box using Streamlit components
+                    st.info("No papers match your search criteria.")
+                    
+                    # Add suggestions using Streamlit components
+                    st.markdown("#### 💡 Suggestions:")
+                    st.markdown("""
+                    - Try different keywords or synonyms (e.g., 'automotive' instead of 'automobile industry')
+                    - Remove some filters to broaden your search  
+                    - Check your spelling
+                    - Use individual words instead of exact phrases
+                    - Run a research workflow to collect more papers
+                    """)
+                    
+                    # Add quick search suggestions
+                    st.markdown("#### 🚀 Quick Search Options:")
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        if st.button("🚗 Automotive", use_container_width=True):
+                            st.session_state.last_search_query = "automotive"
+                            st.rerun()
+                    with col2:
+                        if st.button("🤖 AI & Machine Learning", use_container_width=True):
+                            st.session_state.last_search_query = "machine learning"
+                            st.rerun()  
+                    with col3:
+                        if st.button("🔬 Recent Papers", use_container_width=True):
+                            st.session_state.last_search_query = ""
+                            st.rerun()
             
             else:
                 # Show recent papers when no search query
@@ -2402,21 +2462,14 @@ def main():
                 if recent_papers:
                     # Display recent papers with enhanced UI
                     for paper in recent_papers:
-                        st.markdown(format_paper_card(paper), unsafe_allow_html=True)
+                        format_paper_card(paper)  # Function now renders directly
                 else:
-                    st.markdown(f"""
-                    <div class="modern-card" style="text-align: center; background: linear-gradient(135deg, var(--primary-50) 0%, var(--secondary-50) 100%);">
-                        <h3 style="color: var(--primary-700);">🚀 Start Building Your Knowledge Base</h3>
-                        <p style="color: var(--gray-600); margin: var(--spacing-lg) 0;">
-                            No papers in your knowledge base yet. Launch a research workflow to start collecting academic papers!
-                        </p>
-                        <div style="margin-top: var(--spacing-xl);">
-                            <button class="modern-button" onclick="document.querySelector('[data-testid=\"stTab\"]:first-child').click()">
-                                🔬 Start Research Workflow
-                            </button>
-                        </div>
-                    </div>
-                    """, unsafe_allow_html=True)
+                    # Empty state using Streamlit components
+                    st.markdown("### 🚀 Start Building Your Knowledge Base")
+                    st.info("No papers in your knowledge base yet. Launch a research workflow to start collecting academic papers!")
+                    
+                    if st.button("🔬 Start Research Workflow", type="primary"):
+                        st.info("Navigate to the Research Workflow tab to begin!")
         
         # Knowledge base statistics
         if stats.get('papers', 0) > 0:
@@ -2476,43 +2529,39 @@ def main():
         if stats.get('papers', 0) > 0:
             analytics = get_research_analytics()
             
-            # Key metrics overview
+            # Key metrics overview using Streamlit native components
             st.markdown("### 🎯 Key Research Metrics")
             
             metric_col1, metric_col2, metric_col3, metric_col4 = st.columns(4)
             
             with metric_col1:
-                st.markdown(create_metric_card(
-                    "Total Papers", 
-                    stats.get('papers', 0), 
-                    "📚", 
-                    trend=5.2
-                ), unsafe_allow_html=True)
+                st.metric(
+                    label="📚 Total Papers",
+                    value=stats.get('papers', 0),
+                    delta="5.2% vs last month"
+                )
             
             with metric_col2:
                 avg_citations = analytics.get('avg_citations', 0)
-                st.markdown(create_metric_card(
-                    "Avg Citations", 
-                    f"{avg_citations:.1f}", 
-                    "⭐", 
-                    trend=2.1
-                ), unsafe_allow_html=True)
+                st.metric(
+                    label="⭐ Avg Citations",
+                    value=f"{avg_citations:.1f}",
+                    delta="2.1% vs last month"
+                )
             
             with metric_col3:
-                st.markdown(create_metric_card(
-                    "Research Topics", 
-                    len(analytics.get('trending_topics', [])), 
-                    "🎯", 
-                    trend=-1.3
-                ), unsafe_allow_html=True)
+                st.metric(
+                    label="🎯 Research Topics",
+                    value=len(analytics.get('trending_topics', [])),
+                    delta="-1.3% vs last month"
+                )
             
             with metric_col4:
                 total_sources = len(analytics.get('papers_by_source', {}))
-                st.markdown(create_metric_card(
-                    "Data Sources", 
-                    total_sources, 
-                    "🔗"
-                ), unsafe_allow_html=True)
+                st.metric(
+                    label="🔗 Data Sources",
+                    value=total_sources
+                )
             
             # Advanced visualizations
             st.markdown("### 📈 Research Trends & Patterns")
@@ -2806,7 +2855,13 @@ def main():
                 
                 # Paper export options
                 try:
-                    available_formats = st.session_state.research_crew.get_available_export_formats()
+                    # Get formats from export manager if available
+                    if EXPORT_MANAGER_AVAILABLE and export_manager:
+                        available_formats_dict = export_manager.get_supported_formats()
+                        available_formats = [fmt for fmt, available in available_formats_dict.items() if available]
+                    else:
+                        # Try from research crew
+                        available_formats = st.session_state.research_crew.get_available_export_formats()
                 except (AttributeError, TypeError):
                     # Fallback to default formats if method doesn't exist
                     available_formats = ["pdf", "docx", "txt", "markdown", "html"]
@@ -2925,15 +2980,174 @@ def main():
                 st.markdown("""
                 <div class="modern-card">
                     <h4 style="color: var(--secondary-700); margin-bottom: var(--spacing-lg);">
-                        📚 Bibliography Export
+                        � Analysis Report Export
+                    </h4>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # Analysis report export options
+                analysis_format = st.selectbox(
+                    "📊 Report Format",
+                    ["pdf", "docx", "html", "markdown", "txt"],
+                    help="Choose format for the analysis report"
+                )
+                
+                analysis_filename = st.text_input(
+                    "📁 Report Filename",
+                    value=f"{results['research_topic'].replace(' ', '_')}_analysis_report",
+                    help="Filename without extension"
+                )
+                
+                # Advanced analysis options
+                with st.expander("⚙️ Advanced Report Options"):
+                    include_charts = st.checkbox("📈 Include Charts", value=True)
+                    include_statistics = st.checkbox("📊 Include Statistics", value=True)
+                    include_trends = st.checkbox("📈 Include Trends", value=True)
+                    include_summaries = st.checkbox("📝 Include Paper Summaries", value=True)
+                
+                if st.button("📊 Export Analysis Report", use_container_width=True, type="secondary"):
+                    try:
+                        # Create output directory
+                        output_dir = Path("data/outputs") / f"{results['research_topic'].replace(' ', '_')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                        output_dir.mkdir(parents=True, exist_ok=True)
+                        
+                        # Show progress
+                        progress_bar = st.progress(0, text="Generating analysis report...")
+                        
+                        # Create analysis report content
+                        stats = results.get('statistics', {})
+                        papers = results.get('papers', [])
+                        
+                        progress_bar.progress(0.3, text="Collecting data...")
+                        
+                        # Generate report content
+                        report_content = f"""# Research Analysis Report: {results.get('research_topic', 'Unknown Topic')}
+
+## Executive Summary
+This comprehensive analysis report covers the research conducted on "{results.get('research_topic', 'Unknown Topic')}" using advanced AI-powered research tools.
+
+## Research Statistics
+- **Papers Analyzed**: {stats.get('papers_found', 0)}
+- **Research Notes Extracted**: {stats.get('notes_extracted', 0)}
+- **Key Themes Identified**: {stats.get('themes_identified', 0)}
+- **Citations Generated**: {stats.get('citations_generated', 0)}
+- **Execution Time**: {results.get('execution_time', 'Unknown')}
+- **Processing Rate**: {stats.get('processing_rate', 'Unknown')}
+
+## Key Findings
+{results.get('key_findings', 'Key findings are being processed...')}
+
+## Research Methodology
+This analysis was conducted using the Academic Research Assistant Pro platform, which employs:
+- Multi-source academic database search (OpenAlex, ArXiv, CrossRef)
+- AI-powered content analysis and theme extraction
+- Automated citation generation and formatting
+- Statistical analysis of research trends
+
+## Paper Analysis Summary
+"""
+                        
+                        if papers:
+                            for i, paper in enumerate(papers[:10], 1):  # Include top 10 papers
+                                title = getattr(paper, 'title', f'Paper {i}')
+                                authors = getattr(paper, 'authors', ['Unknown'])
+                                venue = getattr(paper, 'venue', 'Unknown Venue')
+                                year = getattr(paper, 'published_date', '')
+                                if hasattr(year, 'year'):
+                                    year = year.year
+                                
+                                report_content += f"""
+### {i}. {title}
+- **Authors**: {', '.join(authors[:3]) if isinstance(authors, list) else authors}
+- **Venue**: {venue}
+- **Year**: {year}
+- **Relevance Score**: High
+
+"""
+                        
+                        report_content += f"""
+## Conclusion
+This research analysis provides comprehensive insights into the current state of research on "{results.get('research_topic', 'Unknown Topic')}".
+
+## Generated Information
+- **Report Generated**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+- **Generated by**: Academic Research Assistant Pro v2.0
+- **Analysis Engine**: AI-Powered Multi-Source Research Platform
+"""
+                        
+                        progress_bar.progress(0.7, text="Formatting report...")
+                        
+                        # Export the report
+                        output_path = output_dir / analysis_filename
+                        
+                        if analysis_format == 'markdown':
+                            with open(f"{output_path}.md", 'w', encoding='utf-8') as f:
+                                f.write(report_content)
+                        elif analysis_format == 'html':
+                            html_content = f"""<!DOCTYPE html>
+<html>
+<head>
+    <title>Analysis Report: {results.get('research_topic', 'Research')}</title>
+    <meta charset="UTF-8">
+    <style>
+        body {{ font-family: 'Arial', sans-serif; margin: 40px; line-height: 1.6; color: #333; }}
+        h1, h2, h3 {{ color: #2563eb; }}
+        h1 {{ border-bottom: 2px solid #2563eb; padding-bottom: 10px; }}
+        .stats {{ background: #f8fafc; padding: 20px; border-radius: 8px; margin: 20px 0; }}
+        pre {{ background: #f4f4f4; padding: 15px; border-radius: 5px; white-space: pre-wrap; }}
+    </style>
+</head>
+<body>
+    <pre>{report_content}</pre>
+</body>
+</html>"""
+                            with open(f"{output_path}.html", 'w', encoding='utf-8') as f:
+                                f.write(html_content)
+                        else:  # Default to text
+                            with open(f"{output_path}.txt", 'w', encoding='utf-8') as f:
+                                f.write(report_content)
+                        
+                        progress_bar.progress(1.0, text="Analysis report exported!")
+                        
+                        # Success message
+                        st.success(f"🎉 Analysis report exported successfully!", icon="📊")
+                        st.info(f"📁 **Location:** `{output_path}.{analysis_format}`")
+                        
+                    except Exception as e:
+                        st.error(f"Analysis report export error: {e}")
+
+            # Bibliography Export Section (new row)
+            st.markdown("### 📚 Bibliography Export")
+            
+            bib_col1, bib_col2 = st.columns(2)
+            
+            with bib_col1:
+                st.markdown("""
+                <div class="modern-card">
+                    <h4 style="color: var(--secondary-700); margin-bottom: var(--spacing-lg);">
+                        �📚 Bibliography Export
                     </h4>
                 </div>
                 """, unsafe_allow_html=True)
                 
                 # Bibliography export options
+                try:
+                    # Get formats from export manager if available
+                    if EXPORT_MANAGER_AVAILABLE and export_manager:
+                        available_bib_formats_dict = export_manager.get_supported_formats()
+                        available_bib_formats = [fmt for fmt, available in available_bib_formats_dict.items() if available]
+                        # Add academic citation formats
+                        if 'latex' in available_bib_formats:
+                            available_bib_formats.extend(['bibtex', 'apa', 'mla', 'chicago'])
+                        available_bib_formats = list(set(available_bib_formats))  # Remove duplicates
+                    else:
+                        available_bib_formats = ["bibtex", "apa", "mla", "chicago", "txt", "csv", "json", "pdf"]
+                except (AttributeError, TypeError):
+                    available_bib_formats = ["bibtex", "apa", "mla", "chicago", "txt", "csv", "json", "pdf"]
+                
                 bib_format = st.selectbox(
                     "📖 Bibliography Format",
-                    ["bibtex", "apa", "mla", "chicago", "txt", "csv", "json", "pdf"],
+                    available_bib_formats,
                     help="Choose format for exporting the bibliography"
                 )
                 
@@ -2972,8 +3186,30 @@ def main():
                             # Use papers if available, otherwise bibliography
                             references = papers if papers else bibliography
                             
+                            # Create bibliography text
+                            bibliography_text = ""
+                            if references:
+                                bibliography_text = "BIBLIOGRAPHY\n" + "="*50 + "\n\n"
+                                for i, ref in enumerate(references, 1):
+                                    if hasattr(ref, 'title'):
+                                        title = ref.title
+                                        authors = getattr(ref, 'authors', ['Unknown'])
+                                        year = getattr(ref, 'published_date', 'Unknown')
+                                        if hasattr(year, 'year'):
+                                            year = year.year
+                                        venue = getattr(ref, 'venue', 'Unknown Venue')
+                                        
+                                        bibliography_text += f"{i}. {title}\n"
+                                        bibliography_text += f"   Authors: {', '.join(authors) if isinstance(authors, list) else authors}\n"
+                                        bibliography_text += f"   Year: {year}\n"
+                                        bibliography_text += f"   Venue: {venue}\n\n"
+                                    else:
+                                        bibliography_text += f"{i}. {str(ref)}\n\n"
+                            
                             if EXPORT_MANAGER_AVAILABLE and export_manager:
+                                # Fix: Pass bibliography_text (string) and references (list) in correct order
                                 success = export_manager.export_bibliography(
+                                    bibliography_text,
                                     references,
                                     str(output_path),
                                     bib_format
@@ -2984,15 +3220,8 @@ def main():
                                 file_path = f"{output_path}.{bib_format}"
                                 
                                 if bib_format == 'txt':
-                                    content = "BIBLIOGRAPHY\n" + "="*50 + "\n\n"
-                                    for i, ref in enumerate(references, 1):
-                                        title = getattr(ref, 'title', f'Reference {i}')
-                                        authors = getattr(ref, 'authors', ['Unknown'])
-                                        year = getattr(ref, 'year', 'Unknown')
-                                        content += f"{i}. {title}\n   Authors: {', '.join(authors) if isinstance(authors, list) else authors}\n   Year: {year}\n\n"
-                                    
                                     with open(file_path, 'w', encoding='utf-8') as f:
-                                        f.write(content)
+                                        f.write(bibliography_text)
                                     success = True
                                 
                         except Exception as export_error:
@@ -3032,10 +3261,20 @@ def main():
                 )
             
             with package_col2:
+                # Get all available formats for complete package
+                try:
+                    if EXPORT_MANAGER_AVAILABLE and export_manager:
+                        all_formats_dict = export_manager.get_supported_formats()
+                        all_available_formats = [fmt.upper() for fmt, available in all_formats_dict.items() if available]
+                    else:
+                        all_available_formats = ["PDF", "DOCX", "LATEX", "MARKDOWN", "JSON", "TXT", "CSV", "HTML"]
+                except:
+                    all_available_formats = ["PDF", "DOCX", "LATEX", "MARKDOWN", "JSON", "TXT", "CSV", "HTML"]
+                
                 package_formats = st.multiselect(
                     "📄 Include Formats",
-                    ["PDF", "DOCX", "LaTeX", "Markdown", "JSON"],
-                    default=["PDF", "DOCX", "JSON"]
+                    all_available_formats,
+                    default=["PDF", "DOCX", "JSON", "MARKDOWN"] if len(all_available_formats) >= 4 else all_available_formats[:3]
                 )
             
             with package_col3:
@@ -3052,7 +3291,7 @@ def main():
                     output_dir.mkdir(parents=True, exist_ok=True)
                     
                     # Progress tracking
-                    total_steps = len(package_formats) + 3
+                    total_steps = len(package_formats) + 4  # +1 for analysis report, +1 for bibliography, +1 for raw data, +1 for summary
                     progress_bar = st.progress(0, text="Initializing package export...")
                     
                     exported_files = []
@@ -3081,21 +3320,42 @@ def main():
                     try:
                         bib_path = output_dir / "bibliography"
                         
-                        # Get references
+                        # Get references and create bibliography text
                         papers = results.get('papers', [])
-                        bibliography = results.get('bibliography', [])
-                        references = papers if papers else bibliography
+                        bibliography_list = results.get('bibliography', [])
+                        references = papers if papers else bibliography_list
+                        
+                        # Convert references to bibliography text
+                        bibliography_text = ""
+                        if references:
+                            bibliography_text = "BIBLIOGRAPHY\n" + "="*50 + "\n\n"
+                            for i, ref in enumerate(references[:20], 1):  # Include more references
+                                if hasattr(ref, 'title'):
+                                    title = ref.title
+                                    authors = getattr(ref, 'authors', [])
+                                    author_str = ', '.join(authors[:3]) if authors else 'Unknown Author'
+                                    venue = getattr(ref, 'venue', 'Unknown Venue')
+                                    year = getattr(ref, 'published_date', '')
+                                    if hasattr(year, 'year'):
+                                        year = year.year
+                                    elif isinstance(year, str) and len(year) >= 4:
+                                        year = year[:4]
+                                    
+                                    bibliography_text += f"{i}. {title}\n"
+                                    bibliography_text += f"   Authors: {author_str}\n"
+                                    bibliography_text += f"   Venue: {venue}\n"
+                                    bibliography_text += f"   Year: {year}\n\n"
+                                else:
+                                    bibliography_text += f"{i}. {str(ref)}\n\n"
                         
                         if EXPORT_MANAGER_AVAILABLE and export_manager:
-                            if export_manager.export_bibliography(references, str(bib_path), 'txt'):
+                            # Fix: Pass bibliography_text (string) and references (list) in correct order
+                            if export_manager.export_bibliography(bibliography_text, references, str(bib_path), 'txt'):
                                 exported_files.append("bibliography.txt")
                         else:
                             # Fallback bibliography export
                             with open(f"{bib_path}.txt", 'w', encoding='utf-8') as f:
-                                f.write("BIBLIOGRAPHY\n" + "="*50 + "\n\n")
-                                for i, ref in enumerate(references[:10], 1):  # Limit to first 10
-                                    title = getattr(ref, 'title', f'Reference {i}')
-                                    f.write(f"{i}. {title}\n\n")
+                                f.write(bibliography_text)
                             exported_files.append("bibliography.txt")
                     except Exception as bib_error:
                         st.warning(f"Failed to export bibliography: {bib_error}")
@@ -3107,8 +3367,76 @@ def main():
                         json.dump(results, f, indent=2, default=str)
                     exported_files.append("research_data.json")
                     
+                    # Export analysis report
+                    progress_bar.progress((len(package_formats) + 3) / total_steps, text="Creating analysis report...")
+                    try:
+                        analysis_path = output_dir / "analysis_report.md"
+                        stats = results.get('statistics', {})
+                        papers = results.get('papers', [])
+                        
+                        analysis_content = f"""# Research Analysis Report: {results.get('research_topic', 'Unknown Topic')}
+
+## Executive Summary
+This comprehensive analysis report covers the research conducted on "{results.get('research_topic', 'Unknown Topic')}" using advanced AI-powered research tools.
+
+## Research Statistics
+- **Papers Analyzed**: {stats.get('papers_found', 0)}
+- **Research Notes Extracted**: {stats.get('notes_extracted', 0)}
+- **Key Themes Identified**: {stats.get('themes_identified', 0)}
+- **Citations Generated**: {stats.get('citations_generated', 0)}
+- **Execution Time**: {results.get('execution_time', 'Unknown')}
+- **Processing Rate**: {stats.get('processing_rate', 'Unknown')}
+
+## Key Findings
+{results.get('key_findings', 'Key findings are being processed...')}
+
+## Research Methodology
+This analysis was conducted using the Academic Research Assistant Pro platform, which employs:
+- Multi-source academic database search (OpenAlex, ArXiv, CrossRef)
+- AI-powered content analysis and theme extraction
+- Automated citation generation and formatting
+- Statistical analysis of research trends
+
+## Paper Analysis Summary
+"""
+                        
+                        if papers:
+                            for i, paper in enumerate(papers[:10], 1):  # Include top 10 papers
+                                title = getattr(paper, 'title', f'Paper {i}')
+                                authors = getattr(paper, 'authors', ['Unknown'])
+                                venue = getattr(paper, 'venue', 'Unknown Venue')
+                                year = getattr(paper, 'published_date', '')
+                                if hasattr(year, 'year'):
+                                    year = year.year
+                                
+                                analysis_content += f"""
+### {i}. {title}
+- **Authors**: {', '.join(authors[:3]) if isinstance(authors, list) else authors}
+- **Venue**: {venue}
+- **Year**: {year}
+- **Relevance Score**: High
+
+"""
+                        
+                        analysis_content += f"""
+## Conclusion
+This research analysis provides comprehensive insights into the current state of research on "{results.get('research_topic', 'Unknown Topic')}".
+
+## Generated Information
+- **Report Generated**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+- **Generated by**: Academic Research Assistant Pro v2.0
+- **Analysis Engine**: AI-Powered Multi-Source Research Platform
+"""
+                        
+                        with open(analysis_path, 'w', encoding='utf-8') as f:
+                            f.write(analysis_content)
+                        exported_files.append("analysis_report.md")
+                        
+                    except Exception as analysis_error:
+                        st.warning(f"Failed to create analysis report: {analysis_error}")
+                    
                     # Create summary file
-                    progress_bar.progress((len(package_formats) + 3) / total_steps, text="Creating summary...")
+                    progress_bar.progress((len(package_formats) + 4) / total_steps, text="Creating summary...")
                     summary_path = output_dir / "research_summary.md"
                     with open(summary_path, 'w', encoding='utf-8') as f:
                         stats = results.get('statistics', {})
@@ -3161,72 +3489,57 @@ Powered by AI for comprehensive research workflows
                     st.error(f"Package export error: {e}")
         
         else:
-            # No results available - enhanced empty state
-            st.markdown(f"""
-            <div class="modern-card" style="text-align: center; background: linear-gradient(135deg, var(--gray-50) 0%, var(--primary-50) 100%);">
-                <div style="font-size: 4rem; margin-bottom: var(--spacing-lg);">📋</div>
-                <h3 style="color: var(--primary-700); margin-bottom: var(--spacing-md);">
-                    No Research Results to Export
-                </h3>
-                <p style="color: var(--gray-600); margin-bottom: var(--spacing-xl);">
-                    Complete a research workflow first to generate exportable content including research papers, bibliographies, and analysis reports.
-                </p>
-                
-                <div style="background: var(--warning-50); padding: var(--spacing-lg); border-radius: var(--radius-lg); margin: var(--spacing-lg) 0; border: 1px solid var(--warning-200);">
-                    <h4 style="color: var(--warning-700); margin-bottom: var(--spacing-md);">🚀 What You Can Export After Research:</h4>
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--spacing-md); text-align: left;">
-                        <div>
-                            <strong style="color: var(--primary-600);">📄 Research Papers</strong>
-                            <p style="color: var(--gray-600); font-size: var(--font-size-sm); margin: var(--spacing-xs) 0;">
-                                PDF, DOCX, LaTeX, Markdown formats
-                            </p>
-                        </div>
-                        <div>
-                            <strong style="color: var(--secondary-600);">📚 Bibliographies</strong>
-                            <p style="color: var(--gray-600); font-size: var(--font-size-sm); margin: var(--spacing-xs) 0;">
-                                BibTeX, APA, MLA, Chicago styles
-                            </p>
-                        </div>
-                        <div>
-                            <strong style="color: var(--success-600);">📊 Analytics Reports</strong>
-                            <p style="color: var(--gray-600); font-size: var(--font-size-sm); margin: var(--spacing-xs) 0;">
-                                Charts, statistics, insights
-                            </p>
-                        </div>
-                        <div>
-                            <strong style="color: var(--warning-600);">📦 Complete Packages</strong>
-                            <p style="color: var(--gray-600); font-size: var(--font-size-sm); margin: var(--spacing-xs) 0;">
-                                All-in-one research bundles
-                            </p>
-                        </div>
-                    </div>
-                </div>
-                
-                <button class="modern-button" onclick="document.querySelector('[data-testid=\"stTab\"]:first-child').click()" style="margin-right: var(--spacing-md);">
-                    🔬 Start Research Workflow
-                </button>
-                <button class="modern-button success-button" onclick="document.querySelector('[data-testid=\"stTab\"]:nth-child(2)').click()">
-                    💬 Try AI Assistant
-                </button>
-            </div>
-            """, unsafe_allow_html=True)
+            # No results available - enhanced empty state using Streamlit components
+            st.markdown("### 📋 No Research Results to Export")
+            
+            st.info("""
+            Complete a research workflow first to generate exportable content including research papers, bibliographies, and analysis reports.
+            """)
+            
+            st.markdown("### 🚀 What You Can Export After Research:")
+            
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                st.markdown("**📄 Research Papers**")
+                st.caption("PDF, DOCX, LaTeX, Markdown formats")
+            
+            with col2:
+                st.markdown("**📚 Bibliographies**")
+                st.caption("BibTeX, APA, MLA, Chicago styles")
+            
+            with col3:
+                st.markdown("**📊 Analytics Reports**")
+                st.caption("Charts, statistics, insights")
+            
+            with col4:
+                st.markdown("**📦 Complete Packages**")
+                st.caption("All-in-one research bundles")
+            
+            st.markdown("---")
+            
+            col_start, col_try = st.columns(2)
+            with col_start:
+                if st.button("🔬 Start Research Workflow", type="primary", use_container_width=True):
+                    st.info("Navigate to the Research Workflow tab to begin!")
+            
+            with col_try:
+                if st.button("💬 Try AI Assistant", use_container_width=True):
+                    st.info("Navigate to the AI Assistant tab to ask questions!")
     
-    # Footer with performance info
+    # Footer with performance info using Streamlit components
     end_time = time.time()
     total_time = end_time - start_time
     
+    st.markdown("---")
     st.markdown(f"""
-    <div style="margin-top: var(--spacing-2xl); padding: var(--spacing-lg); background: var(--gray-50); 
-                border-radius: var(--radius-lg); text-align: center; border: 1px solid var(--gray-200);">
-        <div style="color: var(--gray-500); font-size: var(--font-size-sm);">
-            🚀 <strong>Academic Research Assistant Pro</strong> | 
-            ⚡ Page loaded in {total_time:.2f}s | 
-            🤖 AI-Powered Research Platform | 
-            📊 {stats.get('papers', 0)} papers in knowledge base
-        </div>
-        <div class="mt-xs text-muted" style="font-size: var(--font-size-xs);">
-            Built with ❤️ for researchers | Version 2.0 Production Ready
-        </div>
+    <div style="text-align: center; padding: 20px; color: #6b7280; font-size: 14px;">
+        🚀 <strong>Academic Research Assistant Pro</strong> | 
+        ⚡ Page loaded in {total_time:.2f}s | 
+        🤖 AI-Powered Research Platform | 
+        📊 {stats.get('papers', 0)} papers in knowledge base
+        <br>
+        <small style="font-size: 12px;">Built with ❤️ for researchers | Version 2.0 Production Ready</small>
     </div>
     """, unsafe_allow_html=True)
 

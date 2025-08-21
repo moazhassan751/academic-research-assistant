@@ -3,6 +3,7 @@ import time
 import asyncio
 import aiohttp
 import json
+import re
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
 from urllib.parse import quote_plus
@@ -31,7 +32,7 @@ class UltraFastOpenAlexTool:
         self.session.headers.update({
             'User-Agent': f'AcademicResearchAssistant/2.0 (mailto:{self.mailto})',
             'Accept': 'application/json',
-            'Accept-Encoding': 'gzip, deflate, br',  # Better compression
+            # Remove problematic Accept-Encoding header
             'Connection': 'keep-alive',  # Connection reuse
             'Cache-Control': 'max-age=300'  # 5-minute cache
         })
@@ -128,10 +129,15 @@ class UltraFastOpenAlexTool:
                 
                 # Try to parse JSON
                 try:
+                    # Handle potential encoding issues
+                    if response.encoding is None:
+                        response.encoding = 'utf-8'
                     return response.json()
                 except json.JSONDecodeError as json_error:
                     logger.error(f"OpenAlex JSON parsing error: {json_error}")
-                    logger.error(f"Response content: {response.text[:500]}")
+                    logger.error(f"Response status: {response.status_code}")
+                    logger.error(f"Response headers: {dict(response.headers)}")
+                    logger.error(f"Response content preview: {response.text[:200] if response.text else 'No content'}")
                     return None
                 
             except requests.exceptions.Timeout:

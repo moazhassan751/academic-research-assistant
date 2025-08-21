@@ -145,6 +145,10 @@ class ExportManager:
                 return self._export_bibliography_pdf(bibliography, f"{output_path}.pdf")
             elif format_type == 'docx':
                 return self._export_bibliography_docx(bibliography, f"{output_path}.docx")
+            elif format_type == 'markdown':
+                return self._export_bibliography_markdown(bibliography, papers, f"{output_path}.md")
+            elif format_type == 'html':
+                return self._export_bibliography_html(bibliography, papers, f"{output_path}.html")
             else:
                 raise ValueError(f"Format {format_type} handler not implemented")
                 
@@ -528,49 +532,326 @@ class ExportManager:
             logger.error(f"Error exporting bibliography to Word: {e}")
             return False
     
+    def _export_bibliography_markdown(self, bibliography: str, papers: List[Any], filepath: str) -> bool:
+        """Export bibliography as Markdown"""
+        try:
+            md_content = "# Bibliography\n\n"
+            md_content += bibliography + "\n\n"
+            
+            # Add detailed paper information
+            if papers:
+                md_content += "## Detailed References\n\n"
+                for i, paper in enumerate(papers, 1):
+                    md_content += f"### {i}. {paper.title}\n\n"
+                    
+                    if paper.authors:
+                        authors_str = ", ".join(paper.authors)
+                        md_content += f"**Authors:** {authors_str}\n\n"
+                    
+                    year = getattr(paper, 'year', None)
+                    if year:
+                        md_content += f"**Year:** {year}\n\n"
+                    
+                    if hasattr(paper, 'journal') and paper.journal:
+                        md_content += f"**Journal:** {paper.journal}\n\n"
+                    
+                    if hasattr(paper, 'doi') and paper.doi:
+                        md_content += f"**DOI:** {paper.doi}\n\n"
+                    
+                    if hasattr(paper, 'url') and paper.url:
+                        md_content += f"**URL:** [{paper.url}]({paper.url})\n\n"
+                    
+                    if hasattr(paper, 'abstract') and paper.abstract:
+                        md_content += f"**Abstract:** {paper.abstract}\n\n"
+                    
+                    md_content += "---\n\n"
+            
+            with open(filepath, 'w', encoding='utf-8') as f:
+                f.write(md_content)
+            
+            logger.info(f"Bibliography exported to Markdown: {filepath}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error exporting bibliography to Markdown: {e}")
+            return False
+    
+    def _export_bibliography_html(self, bibliography: str, papers: List[Any], filepath: str) -> bool:
+        """Export bibliography as HTML"""
+        try:
+            html_content = """<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bibliography</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; line-height: 1.6; }
+        h1 { color: #333; border-bottom: 2px solid #333; padding-bottom: 10px; }
+        h2 { color: #555; margin-top: 30px; }
+        h3 { color: #666; margin-top: 25px; }
+        .paper { margin-bottom: 20px; padding: 15px; border-left: 4px solid #007acc; background-color: #f9f9f9; }
+        .authors { font-weight: bold; color: #444; }
+        .year { font-style: italic; color: #666; }
+        .journal { color: #555; }
+        .doi { color: #007acc; }
+        .abstract { margin-top: 10px; color: #333; }
+        a { color: #007acc; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+        hr { border: none; border-top: 1px solid #ddd; margin: 20px 0; }
+    </style>
+</head>
+<body>
+    <h1>Bibliography</h1>
+"""
+            
+            # Add basic bibliography content
+            bibliography_lines = bibliography.split('\n')
+            html_content += "    <div class='summary'>\n"
+            for line in bibliography_lines:
+                if line.strip():
+                    html_content += f"        <p>{line}</p>\n"
+            html_content += "    </div>\n\n"
+            
+            # Add detailed paper information
+            if papers:
+                html_content += "    <h2>Detailed References</h2>\n\n"
+                for i, paper in enumerate(papers, 1):
+                    html_content += f"    <div class='paper'>\n"
+                    html_content += f"        <h3>{i}. {paper.title}</h3>\n"
+                    
+                    if paper.authors:
+                        authors_str = ", ".join(paper.authors)
+                        html_content += f"        <p class='authors'>Authors: {authors_str}</p>\n"
+                    
+                    year = getattr(paper, 'year', None)
+                    if year:
+                        html_content += f"        <p class='year'>Year: {year}</p>\n"
+                    
+                    if hasattr(paper, 'journal') and paper.journal:
+                        html_content += f"        <p class='journal'>Journal: {paper.journal}</p>\n"
+                    
+                    if hasattr(paper, 'doi') and paper.doi:
+                        html_content += f"        <p class='doi'>DOI: {paper.doi}</p>\n"
+                    
+                    if hasattr(paper, 'url') and paper.url:
+                        html_content += f"        <p>URL: <a href='{paper.url}' target='_blank'>{paper.url}</a></p>\n"
+                    
+                    if hasattr(paper, 'abstract') and paper.abstract:
+                        abstract_preview = paper.abstract[:500] + "..." if len(paper.abstract) > 500 else paper.abstract
+                        html_content += f"        <p class='abstract'><strong>Abstract:</strong> {abstract_preview}</p>\n"
+                    
+                    html_content += "    </div>\n\n"
+            
+            html_content += """</body>
+</html>"""
+            
+            with open(filepath, 'w', encoding='utf-8') as f:
+                f.write(html_content)
+            
+            logger.info(f"Bibliography exported to HTML: {filepath}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error exporting bibliography to HTML: {e}")
+            return False
+
     # Formatting helper methods
     def _format_draft_as_markdown(self, draft: Dict[str, Any]) -> str:
-        """Format draft as markdown document"""
-        md_content = f"# {draft.get('title', 'Research Paper Draft')}\n\n"
+        """Format draft as professionally structured markdown document"""
+        md_content = ""
         
-        # Abstract
+        # Title with proper formatting
+        title = draft.get('title', 'Research Paper Draft')
+        md_content += f"# {title}\n\n"
+        
+        # Add metadata section
+        md_content += "---\n"
+        md_content += f"**Document Type:** Research Paper Draft\n"
+        md_content += f"**Generated:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+        md_content += f"**Status:** Draft\n"
+        md_content += "---\n\n"
+        
+        # Table of Contents
+        md_content += "## Table of Contents\n\n"
+        toc_items = []
+        if 'abstract' in draft and draft['abstract']:
+            toc_items.append("- [Abstract](#abstract)")
+        if 'introduction' in draft and draft['introduction']:
+            toc_items.append("- [1. Introduction](#1-introduction)")
+        
+        section_num = 2
+        if 'sections' in draft and draft['sections']:
+            for key, section in draft['sections'].items():
+                if key.startswith('theme_') and isinstance(section, dict):
+                    title = section.get('title', f'Section {section_num}')
+                    clean_title = title.lower().replace(' ', '-').replace(',', '').replace('.', '')
+                    toc_items.append(f"- [{section_num}. {title}](#{section_num}-{clean_title})")
+                    section_num += 1
+        
+        if 'discussion' in draft and draft['discussion']:
+            toc_items.append(f"- [{section_num}. Discussion](#{section_num}-discussion)")
+            section_num += 1
+        if 'conclusion' in draft and draft['conclusion']:
+            toc_items.append(f"- [{section_num}. Conclusion](#{section_num}-conclusion)")
+        if 'bibliography' in draft and draft['bibliography']:
+            toc_items.append("- [References](#references)")
+        
+        md_content += "\n".join(toc_items) + "\n\n"
+        
+        # Abstract with enhanced formatting
         if 'abstract' in draft and draft['abstract']:
             md_content += "## Abstract\n\n"
-            md_content += str(draft['abstract']) + "\n\n"
+            md_content += "> **Summary:** This section provides a concise overview of the research findings and methodology.\n\n"
+            abstract_text = self._format_content_with_structure(str(draft['abstract']))
+            md_content += abstract_text + "\n\n"
+            md_content += "---\n\n"
         
-        # Introduction
+        # Introduction with enhanced formatting
         if 'introduction' in draft and draft['introduction']:
             md_content += "## 1. Introduction\n\n"
-            md_content += str(draft['introduction']) + "\n\n"
+            md_content += "### 1.1 Background\n\n"
+            intro_text = self._format_content_with_structure(str(draft['introduction']))
+            md_content += intro_text + "\n\n"
         
-        # Sections
+        # Main sections with improved structure
         section_num = 2
         if 'sections' in draft and draft['sections']:
             for key, section in draft['sections'].items():
                 if key.startswith('theme_') and isinstance(section, dict):
                     title = section.get('title', f'Section {section_num}')
                     content = section.get('content', 'Content unavailable')
+                    
                     md_content += f"## {section_num}. {title}\n\n"
-                    md_content += str(content) + "\n\n"
+                    
+                    # Add subsection structure
+                    md_content += f"### {section_num}.1 Overview\n\n"
+                    formatted_content = self._format_content_with_structure(str(content))
+                    md_content += formatted_content + "\n\n"
+                    
+                    # Add key findings if content is substantial
+                    if len(str(content)) > 200:
+                        md_content += f"### {section_num}.2 Key Insights\n\n"
+                        insights = self._extract_key_points(str(content))
+                        md_content += insights + "\n\n"
+                    
                     section_num += 1
         
-        # Discussion
+        # Discussion with enhanced structure
         if 'discussion' in draft and draft['discussion']:
             md_content += f"## {section_num}. Discussion\n\n"
-            md_content += str(draft['discussion']) + "\n\n"
+            md_content += f"### {section_num}.1 Analysis\n\n"
+            discussion_text = self._format_content_with_structure(str(draft['discussion']))
+            md_content += discussion_text + "\n\n"
+            
+            md_content += f"### {section_num}.2 Implications\n\n"
+            md_content += "The findings presented in this research have several important implications:\n\n"
+            md_content += "- **Theoretical Implications:** Further research in this area\n"
+            md_content += "- **Practical Applications:** Real-world implementation considerations\n"
+            md_content += "- **Future Directions:** Areas for continued investigation\n\n"
             section_num += 1
         
-        # Conclusion
+        # Conclusion with enhanced structure
         if 'conclusion' in draft and draft['conclusion']:
             md_content += f"## {section_num}. Conclusion\n\n"
-            md_content += str(draft['conclusion']) + "\n\n"
+            md_content += "### Summary of Findings\n\n"
+            conclusion_text = self._format_content_with_structure(str(draft['conclusion']))
+            md_content += conclusion_text + "\n\n"
+            
+            md_content += "### Final Remarks\n\n"
+            md_content += "This research contributes to the ongoing understanding of the topic and provides a foundation for future investigations.\n\n"
         
-        # References
+        # References with proper formatting
         if 'bibliography' in draft and draft['bibliography']:
             md_content += "## References\n\n"
-            md_content += str(draft['bibliography']) + "\n\n"
+            md_content += "---\n\n"
+            bib_text = str(draft['bibliography'])
+            if isinstance(draft['bibliography'], list):
+                for i, ref in enumerate(draft['bibliography'], 1):
+                    md_content += f"{i}. {ref}\n\n"
+            else:
+                md_content += bib_text + "\n\n"
+        
+        # Add appendices section if there's additional data
+        if 'data' in draft or 'appendices' in draft:
+            md_content += "## Appendices\n\n"
+            md_content += "### Appendix A: Additional Data\n\n"
+            md_content += "Supplementary materials and data are available upon request.\n\n"
         
         return md_content
+    
+    def _format_content_with_structure(self, content: str) -> str:
+        """Format content with proper paragraph structure and bullet points"""
+        if not content or len(content.strip()) == 0:
+            return "Content not available."
+        
+        # Split content into sentences
+        sentences = [s.strip() for s in content.split('.') if s.strip()]
+        
+        if len(sentences) <= 2:
+            return content
+        
+        formatted_content = ""
+        
+        # Group sentences into paragraphs
+        current_paragraph = []
+        for i, sentence in enumerate(sentences):
+            current_paragraph.append(sentence)
+            
+            # Create paragraph breaks every 2-3 sentences or at logical breaks
+            if (len(current_paragraph) >= 3 or 
+                i == len(sentences) - 1 or
+                any(keyword in sentence.lower() for keyword in ['however', 'therefore', 'furthermore', 'additionally', 'moreover'])):
+                
+                paragraph_text = '. '.join(current_paragraph)
+                if not paragraph_text.endswith('.'):
+                    paragraph_text += '.'
+                formatted_content += paragraph_text + "\n\n"
+                current_paragraph = []
+        
+        # Look for lists or enumerable items
+        if any(keyword in content.lower() for keyword in ['first', 'second', 'third', 'include', 'such as', 'following']):
+            formatted_content += self._create_bullet_points(content)
+        
+        return formatted_content.strip()
+    
+    def _extract_key_points(self, content: str) -> str:
+        """Extract key points and format as bullet points"""
+        sentences = [s.strip() for s in content.split('.') if s.strip() and len(s.strip()) > 20]
+        
+        if len(sentences) < 2:
+            return "- " + content
+        
+        key_points = []
+        for sentence in sentences[:4]:  # Take up to 4 key sentences
+            if len(sentence) > 30:  # Only substantial sentences
+                # Clean up the sentence
+                clean_sentence = sentence.strip()
+                if not clean_sentence.endswith('.'):
+                    clean_sentence += '.'
+                key_points.append(f"- **{clean_sentence}**")
+        
+        return "\n".join(key_points) if key_points else f"- {content}"
+    
+    def _create_bullet_points(self, content: str) -> str:
+        """Create structured bullet points from content"""
+        bullet_content = "\n#### Key Points:\n\n"
+        
+        # Look for natural list items
+        if 'include' in content.lower() or 'such as' in content.lower():
+            items = content.split(',')
+            if len(items) > 1:
+                for item in items[:5]:  # Limit to 5 items
+                    clean_item = item.strip().replace('include', '').replace('such as', '').strip()
+                    if len(clean_item) > 5:
+                        bullet_content += f"- {clean_item}\n"
+        else:
+            # Create thematic bullet points
+            sentences = [s.strip() for s in content.split('.') if s.strip() and len(s.strip()) > 20]
+            for sentence in sentences[:3]:  # Limit to 3 points
+                bullet_content += f"- {sentence}.\n"
+        
+        return bullet_content + "\n"
     
     def _format_draft_as_latex(self, draft: Dict[str, Any]) -> str:
         """Format draft as LaTeX document"""
@@ -638,99 +919,388 @@ class ExportManager:
         return latex_content
     
     def _format_draft_as_html(self, draft: Dict[str, Any]) -> str:
-        """Format draft as HTML document"""
+        """Format draft as professionally structured HTML document"""
+        title = draft.get('title', 'Research Paper Draft')
+        
         html_content = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{draft.get('title', 'Research Paper Draft')}</title>
+    <title>{self._escape_html(title)}</title>
     <style>
         body {{
-            font-family: 'Times New Roman', serif;
-            line-height: 1.6;
-            max-width: 800px;
+            font-family: 'Georgia', 'Times New Roman', serif;
+            line-height: 1.8;
+            max-width: 900px;
             margin: 0 auto;
-            padding: 20px;
+            padding: 40px;
             background-color: #fff;
-        }}
-        h1 {{
-            text-align: center;
             color: #333;
-            border-bottom: 2px solid #333;
-            padding-bottom: 10px;
         }}
+        
+        .header {{
+            text-align: center;
+            margin-bottom: 40px;
+            border-bottom: 3px solid #2c3e50;
+            padding-bottom: 20px;
+        }}
+        
+        h1 {{
+            color: #2c3e50;
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            font-weight: 300;
+        }}
+        
+        .metadata {{
+            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+            font-size: 0.9em;
+            color: #666;
+        }}
+        
+        .toc {{
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 30px 0;
+        }}
+        
+        .toc h2 {{
+            color: #495057;
+            font-size: 1.3em;
+            margin-bottom: 15px;
+        }}
+        
+        .toc ul {{
+            list-style: none;
+            padding-left: 0;
+        }}
+        
+        .toc li {{
+            padding: 5px 0;
+            border-bottom: 1px dotted #ccc;
+        }}
+        
+        .toc a {{
+            color: #007bff;
+            text-decoration: none;
+            font-weight: 500;
+        }}
+        
+        .toc a:hover {{
+            text-decoration: underline;
+        }}
+        
         h2 {{
-            color: #444;
+            color: #2c3e50;
+            font-size: 1.8em;
+            margin-top: 40px;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #3498db;
+        }}
+        
+        h3 {{
+            color: #34495e;
+            font-size: 1.4em;
             margin-top: 30px;
             margin-bottom: 15px;
         }}
+        
+        h4 {{
+            color: #7f8c8d;
+            font-size: 1.2em;
+            margin-top: 25px;
+            margin-bottom: 10px;
+        }}
+        
         p {{
             text-align: justify;
-            margin-bottom: 15px;
+            margin-bottom: 20px;
+            font-size: 1.1em;
+            text-indent: 1.5em;
         }}
+        
         .abstract {{
-            background-color: #f9f9f9;
-            padding: 20px;
-            border-left: 4px solid #333;
-            margin: 20px 0;
+            background: linear-gradient(135deg, #e8f4fd 0%, #c3e8ff 100%);
+            padding: 25px;
+            border-left: 5px solid #3498db;
+            margin: 30px 0;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
         }}
+        
+        .abstract h2 {{
+            margin-top: 0;
+            color: #2980b9;
+        }}
+        
+        .abstract p {{
+            font-style: italic;
+            text-indent: 0;
+            color: #2c3e50;
+        }}
+        
+        .key-points {{
+            background-color: #fff3cd;
+            border: 1px solid #ffeaa7;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 25px 0;
+        }}
+        
+        .key-points h4 {{
+            color: #856404;
+            margin-top: 0;
+        }}
+        
+        ul {{
+            padding-left: 25px;
+        }}
+        
+        li {{
+            margin-bottom: 8px;
+            line-height: 1.6;
+        }}
+        
+        .strong-point {{
+            font-weight: 600;
+            color: #2c3e50;
+        }}
+        
+        .section-overview {{
+            background-color: #f8f9fa;
+            border-left: 4px solid #6c757d;
+            padding: 15px;
+            margin: 20px 0;
+            font-style: italic;
+        }}
+        
+        .implications {{
+            background-color: #e8f5e8;
+            border: 1px solid #c3e6c3;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 25px 0;
+        }}
+        
         .references {{
+            background-color: #f8f9fa;
+            padding: 25px;
+            border-radius: 8px;
+            margin-top: 40px;
+            font-size: 0.95em;
+            line-height: 1.6;
+        }}
+        
+        .references h2 {{
+            color: #495057;
+        }}
+        
+        .footer {{
+            text-align: center;
+            margin-top: 50px;
+            padding-top: 20px;
+            border-top: 1px solid #dee2e6;
+            color: #6c757d;
             font-size: 0.9em;
-            line-height: 1.4;
+        }}
+        
+        @media print {{
+            body {{
+                font-size: 12pt;
+                line-height: 1.6;
+            }}
+            .toc {{
+                page-break-after: always;
+            }}
         }}
     </style>
 </head>
 <body>
-    <h1>{draft.get('title', 'Research Paper Draft')}</h1>
+    <div class="header">
+        <h1>{self._escape_html(title)}</h1>
+        <div class="metadata">
+            <strong>Document Type:</strong> Research Paper Draft<br>
+            <strong>Generated:</strong> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}<br>
+            <strong>Status:</strong> Draft
+        </div>
+    </div>
 """
         
-        # Abstract
+        # Table of Contents
+        html_content += '    <div class="toc">\n'
+        html_content += '        <h2>Table of Contents</h2>\n'
+        html_content += '        <ul>\n'
+        
         if 'abstract' in draft and draft['abstract']:
-            html_content += '    <div class="abstract">\n'
-            html_content += '        <h2>Abstract</h2>\n'
-            html_content += f'        <p>{self._escape_html(str(draft["abstract"]))}</p>\n'
-            html_content += '    </div>\n'
-        
-        # Introduction
+            html_content += '            <li><a href="#abstract">Abstract</a></li>\n'
         if 'introduction' in draft and draft['introduction']:
-            html_content += '    <h2>1. Introduction</h2>\n'
-            html_content += f'    <p>{self._escape_html(str(draft["introduction"]))}</p>\n'
+            html_content += '            <li><a href="#introduction">1. Introduction</a></li>\n'
         
-        # Sections
         section_num = 2
         if 'sections' in draft and draft['sections']:
             for key, section in draft['sections'].items():
                 if key.startswith('theme_') and isinstance(section, dict):
-                    title = section.get('title', f'Section {section_num}')
-                    content = section.get('content', 'Content unavailable')
-                    html_content += f'    <h2>{section_num}. {self._escape_html(title)}</h2>\n'
-                    html_content += f'    <p>{self._escape_html(str(content))}</p>\n'
+                    title_clean = section.get('title', f'Section {section_num}')
+                    anchor = title_clean.lower().replace(' ', '-').replace(',', '').replace('.', '')
+                    html_content += f'            <li><a href="#section-{section_num}">{section_num}. {self._escape_html(title_clean)}</a></li>\n'
                     section_num += 1
         
-        # Discussion
         if 'discussion' in draft and draft['discussion']:
-            html_content += f'    <h2>{section_num}. Discussion</h2>\n'
-            html_content += f'    <p>{self._escape_html(str(draft["discussion"]))}</p>\n'
+            html_content += f'            <li><a href="#discussion">{section_num}. Discussion</a></li>\n'
+            section_num += 1
+        if 'conclusion' in draft and draft['conclusion']:
+            html_content += f'            <li><a href="#conclusion">{section_num}. Conclusion</a></li>\n'
+        if 'bibliography' in draft and draft['bibliography']:
+            html_content += '            <li><a href="#references">References</a></li>\n'
+        
+        html_content += '        </ul>\n'
+        html_content += '    </div>\n\n'
+        
+        # Abstract with enhanced formatting
+        if 'abstract' in draft and draft['abstract']:
+            html_content += '    <div class="abstract" id="abstract">\n'
+            html_content += '        <h2>Abstract</h2>\n'
+            html_content += '        <div class="section-overview">This section provides a concise overview of the research findings and methodology.</div>\n'
+            formatted_abstract = self._format_html_content_with_structure(str(draft['abstract']))
+            html_content += formatted_abstract
+            html_content += '    </div>\n\n'
+        
+        # Introduction with enhanced formatting
+        if 'introduction' in draft and draft['introduction']:
+            html_content += '    <h2 id="introduction">1. Introduction</h2>\n'
+            html_content += '    <h3>1.1 Background</h3>\n'
+            formatted_intro = self._format_html_content_with_structure(str(draft['introduction']))
+            html_content += formatted_intro
+        
+        # Main sections with improved structure
+        section_num = 2
+        if 'sections' in draft and draft['sections']:
+            for key, section in draft['sections'].items():
+                if key.startswith('theme_') and isinstance(section, dict):
+                    title_clean = section.get('title', f'Section {section_num}')
+                    content = section.get('content', 'Content unavailable')
+                    
+                    html_content += f'    <h2 id="section-{section_num}">{section_num}. {self._escape_html(title_clean)}</h2>\n'
+                    html_content += f'    <h3>{section_num}.1 Overview</h3>\n'
+                    
+                    formatted_content = self._format_html_content_with_structure(str(content))
+                    html_content += formatted_content
+                    
+                    # Add key findings if content is substantial
+                    if len(str(content)) > 200:
+                        html_content += f'    <h3>{section_num}.2 Key Insights</h3>\n'
+                        html_content += '    <div class="key-points">\n'
+                        html_content += '        <h4>Key Points:</h4>\n'
+                        insights = self._extract_html_key_points(str(content))
+                        html_content += insights
+                        html_content += '    </div>\n'
+                    
+                    section_num += 1
+        
+        # Discussion with enhanced structure
+        if 'discussion' in draft and draft['discussion']:
+            html_content += f'    <h2 id="discussion">{section_num}. Discussion</h2>\n'
+            html_content += f'    <h3>{section_num}.1 Analysis</h3>\n'
+            formatted_discussion = self._format_html_content_with_structure(str(draft['discussion']))
+            html_content += formatted_discussion
+            
+            html_content += f'    <h3>{section_num}.2 Implications</h3>\n'
+            html_content += '    <div class="implications">\n'
+            html_content += '        <p>The findings presented in this research have several important implications:</p>\n'
+            html_content += '        <ul>\n'
+            html_content += '            <li><span class="strong-point">Theoretical Implications:</span> Further research in this area</li>\n'
+            html_content += '            <li><span class="strong-point">Practical Applications:</span> Real-world implementation considerations</li>\n'
+            html_content += '            <li><span class="strong-point">Future Directions:</span> Areas for continued investigation</li>\n'
+            html_content += '        </ul>\n'
+            html_content += '    </div>\n'
             section_num += 1
         
-        # Conclusion
+        # Conclusion with enhanced structure
         if 'conclusion' in draft and draft['conclusion']:
-            html_content += f'    <h2>{section_num}. Conclusion</h2>\n'
-            html_content += f'    <p>{self._escape_html(str(draft["conclusion"]))}</p>\n'
+            html_content += f'    <h2 id="conclusion">{section_num}. Conclusion</h2>\n'
+            html_content += '    <h3>Summary of Findings</h3>\n'
+            formatted_conclusion = self._format_html_content_with_structure(str(draft['conclusion']))
+            html_content += formatted_conclusion
+            
+            html_content += '    <h3>Final Remarks</h3>\n'
+            html_content += '    <p>This research contributes to the ongoing understanding of the topic and provides a foundation for future investigations.</p>\n'
         
-        # References
+        # References with proper formatting
         if 'bibliography' in draft and draft['bibliography']:
-            html_content += '    <h2>References</h2>\n'
-            html_content += '    <div class="references">\n'
-            bib_entries = str(draft['bibliography']).split('\n\n')
-            for entry in bib_entries:
-                if entry.strip():
-                    html_content += f'        <p>{self._escape_html(entry.strip())}</p>\n'
+            html_content += '    <div class="references" id="references">\n'
+            html_content += '        <h2>References</h2>\n'
+            bib_text = str(draft['bibliography'])
+            if isinstance(draft['bibliography'], list):
+                html_content += '        <ol>\n'
+                for ref in draft['bibliography']:
+                    html_content += f'            <li>{self._escape_html(str(ref))}</li>\n'
+                html_content += '        </ol>\n'
+            else:
+                html_content += f'        <p>{self._escape_html(bib_text)}</p>\n'
             html_content += '    </div>\n'
         
-        html_content += """</body>
-</html>"""
+        # Footer
+        html_content += '    <div class="footer">\n'
+        html_content += '        <p>Generated by Academic Research Assistant</p>\n'
+        html_content += '    </div>\n'
+        html_content += '</body>\n</html>'
+        
+        return html_content
+    
+    def _format_html_content_with_structure(self, content: str) -> str:
+        """Format content with proper HTML paragraph structure"""
+        if not content or len(content.strip()) == 0:
+            return '        <p>Content not available.</p>\n'
+        
+        # Split content into sentences
+        sentences = [s.strip() for s in content.split('.') if s.strip()]
+        
+        if len(sentences) <= 2:
+            return f'        <p>{self._escape_html(content)}</p>\n'
+        
+        formatted_content = ""
+        
+        # Group sentences into paragraphs
+        current_paragraph = []
+        for i, sentence in enumerate(sentences):
+            current_paragraph.append(sentence)
+            
+            # Create paragraph breaks every 2-3 sentences or at logical breaks
+            if (len(current_paragraph) >= 3 or 
+                i == len(sentences) - 1 or
+                any(keyword in sentence.lower() for keyword in ['however', 'therefore', 'furthermore', 'additionally', 'moreover'])):
+                
+                paragraph_text = '. '.join(current_paragraph)
+                if not paragraph_text.endswith('.'):
+                    paragraph_text += '.'
+                formatted_content += f'        <p>{self._escape_html(paragraph_text)}</p>\n'
+                current_paragraph = []
+        
+        return formatted_content
+    
+    def _extract_html_key_points(self, content: str) -> str:
+        """Extract key points and format as HTML list items"""
+        sentences = [s.strip() for s in content.split('.') if s.strip() and len(s.strip()) > 20]
+        
+        if len(sentences) < 2:
+            return f'        <ul><li>{self._escape_html(content)}</li></ul>\n'
+        
+        html_content = '        <ul>\n'
+        for sentence in sentences[:4]:  # Take up to 4 key sentences
+            if len(sentence) > 30:  # Only substantial sentences
+                clean_sentence = sentence.strip()
+                if not clean_sentence.endswith('.'):
+                    clean_sentence += '.'
+                html_content += f'            <li><span class="strong-point">{self._escape_html(clean_sentence)}</span></li>\n'
+        html_content += '        </ul>\n'
+        
         return html_content
     
     def _format_papers_as_bibtex(self, papers: List[Any]) -> str:

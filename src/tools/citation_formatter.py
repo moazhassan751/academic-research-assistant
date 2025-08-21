@@ -1,5 +1,5 @@
 import re
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Union
 from datetime import datetime
 from ..storage.models import Paper, Citation
 from ..utils.logging import logger
@@ -8,10 +8,78 @@ class CitationFormatter:
     def __init__(self):
         self.citation_counter = 1
         self.used_keys = set()  # Track used citation keys to avoid duplicates
+        
+        # Configuration
+        self.max_authors_display = {
+            'apa': 20,      # APA 7th edition allows up to 20 authors before et al.
+            'mla': 1,       # MLA typically shows first author + et al.
+            'chicago': 10,  # Chicago allows more flexibility
+            'bibtex': 999   # BibTeX can handle many authors
+        }
+        
+        # DOI pattern for validation
+        self.doi_pattern = re.compile(r'^10\.\d{4,}/[^\s]+$')
+        
+        # Special character mappings for safe formatting
+        self.special_chars = {
+            '&': '\\&',
+            '%': '\\%',
+            '$': '\\$',
+            '#': '\\#',
+            '_': '\\_',
+            '{': '\\{',
+            '}': '\\}'
+        }
+    
+    def _validate_paper(self, paper: Paper) -> bool:
+        """Validate paper object has minimum required data"""
+        if not paper:
+            logger.error("Paper object is None")
+            return False
+        
+        if not hasattr(paper, 'title') or not paper.title:
+            logger.warning(f"Paper {getattr(paper, 'id', 'unknown')} missing title")
+            return False
+        
+        if not hasattr(paper, 'authors'):
+            logger.warning(f"Paper {paper.id} missing authors attribute")
+            return False
+            
+        return True
+    
+    def _sanitize_text(self, text: str, format_type: str = 'general') -> str:
+        """Sanitize text for different citation formats"""
+        if not text:
+            return ""
+        
+        # Basic cleaning
+        text = text.strip()
+        
+        # Format-specific sanitization
+        if format_type == 'bibtex':
+            # Escape special LaTeX characters
+            for char, escaped in self.special_chars.items():
+                text = text.replace(char, escaped)
+        elif format_type == 'html':
+            # HTML escaping
+            text = text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+        
+        return text
+    
+    def _validate_doi(self, doi: str) -> bool:
+        """Validate DOI format"""
+        if not doi:
+            return False
+        return bool(self.doi_pattern.match(doi.strip()))
     
     def generate_citation_key(self, paper: Paper) -> str:
-        """Generate a unique citation key for the paper"""
+        """Generate a unique citation key for the paper with enhanced validation"""
         try:
+            # Validate input
+            if not self._validate_paper(paper):
+                logger.warning("Invalid paper object, using fallback citation key")
+                return self._generate_fallback_key()
+            
             # Use first author's last name + year
             if paper.authors and len(paper.authors) > 0:
                 first_author = paper.authors[0]
@@ -24,14 +92,23 @@ class CitationFormatter:
                 name_parts = first_author.strip().split()
                 if name_parts:
                     last_name = name_parts[-1].lower()
+                    # Handle international characters and special cases
+                    last_name = re.sub(r'[^a-zA-Z]', '', last_name)
                 else:
                     last_name = "unknown"
             else:
                 last_name = "unknown"
             
-            # Get year
-            if paper.published_date:
-                year = paper.published_date.year
+            # Get year with better date handling
+            if hasattr(paper, 'published_date') and paper.published_date:
+                if hasattr(paper.published_date, 'year'):
+                    year = paper.published_date.year
+                else:
+                    # Handle string dates
+                    try:
+                        year = int(str(paper.published_date)[:4])
+                    except:
+                        year = datetime.now().year
             else:
                 year = datetime.now().year
             
@@ -47,25 +124,34 @@ class CitationFormatter:
             final_key = base_key
             suffix_counter = 1
             while final_key in self.used_keys:
-                final_key = f"{base_key}_{chr(96 + suffix_counter)}"  # a, b, c, etc.
-                suffix_counter += 1
-                if suffix_counter > 26:  # If we run out of letters, use numbers
+                if suffix_counter <= 26:
+                    final_key = f"{base_key}_{chr(96 + suffix_counter)}"  # a, b, c, etc.
+                else:
                     final_key = f"{base_key}_{suffix_counter - 26}"
+                suffix_counter += 1
+                
+                # Prevent infinite loops
+                if suffix_counter > 1000:
+                    final_key = f"{base_key}_{datetime.now().timestamp()}"
+                    break
             
             self.used_keys.add(final_key)
             return final_key
             
         except Exception as e:
             logger.error(f"Error generating citation key: {e}")
-            # Fallback key
-            key = f"paper{self.citation_counter}"
-            while key in self.used_keys:
-                self.citation_counter += 1
-                key = f"paper{self.citation_counter}"
-            
-            self.used_keys.add(key)
+            return self._generate_fallback_key()
+    
+    def _generate_fallback_key(self) -> str:
+        """Generate a fallback citation key when normal generation fails"""
+        key = f"paper{self.citation_counter}"
+        while key in self.used_keys:
             self.citation_counter += 1
-            return key
+            key = f"paper{self.citation_counter}"
+        
+        self.used_keys.add(key)
+        self.citation_counter += 1
+        return key
     
     def clean_author_name(self, author_name: str) -> str:
         """Clean author name by removing institutional affiliations and ORCID info"""
@@ -230,16 +316,21 @@ class CitationFormatter:
             return f"Error formatting citation for: {paper.title[:50]}..."
     
     def format_bibtex(self, paper: Paper, citation_key: str) -> str:
-        """Format citation in BibTeX style with enhanced metadata"""
+        """Format citation in BibTeX style with enhanced metadata and validation"""
         try:
+            if not self._validate_paper(paper):
+                return self._generate_error_bibtex(citation_key, paper.title if hasattr(paper, 'title') else "Unknown")
+            
             venue, pub_type = self.extract_venue_info(paper)
             
-            # Determine BibTeX entry type
+            # Determine BibTeX entry type with more precision
             if pub_type == "journal":
                 entry_type = "article"
             elif pub_type == "conference":
                 entry_type = "inproceedings"
             elif pub_type == "preprint":
+                entry_type = "misc"
+            elif hasattr(paper, 'arxiv_id') and paper.arxiv_id:
                 entry_type = "misc"
             else:
                 entry_type = "article"
@@ -247,23 +338,34 @@ class CitationFormatter:
             # Build BibTeX entry
             bibtex_lines = [f"@{entry_type}{{{citation_key},"]
             
-            # Title
-            title_clean = paper.title.replace('{', '\\{').replace('}', '\\}')
+            # Title (required field)
+            title_clean = self._sanitize_text(paper.title, 'bibtex')
             bibtex_lines.append(f"  title={{{title_clean}}},")
             
-            # Authors
+            # Authors (handle various cases)
             if paper.authors:
                 authors_str = self.format_authors_list(paper.authors, "bibtex")
-                authors_clean = authors_str.replace('{', '\\{').replace('}', '\\}')
+                authors_clean = self._sanitize_text(authors_str, 'bibtex')
                 bibtex_lines.append(f"  author={{{authors_clean}}},")
+            else:
+                bibtex_lines.append(f"  author={{Unknown Author}},")
             
             # Year
-            if paper.published_date:
-                bibtex_lines.append(f"  year={{{paper.published_date.year}}},")
+            if hasattr(paper, 'published_date') and paper.published_date:
+                if hasattr(paper.published_date, 'year'):
+                    year = paper.published_date.year
+                else:
+                    try:
+                        year = int(str(paper.published_date)[:4])
+                    except:
+                        year = datetime.now().year
+                bibtex_lines.append(f"  year={{{year}}},")
+            else:
+                bibtex_lines.append(f"  year={{{datetime.now().year}}},")
             
-            # Venue
+            # Venue-specific fields
             if venue and venue not in ["Academic Database", "CrossRef Database", "Retrieved from web"]:
-                venue_clean = venue.replace('{', '\\{').replace('}', '\\}')
+                venue_clean = self._sanitize_text(venue, 'bibtex')
                 if entry_type == "article":
                     bibtex_lines.append(f"  journal={{{venue_clean}}},")
                 elif entry_type == "inproceedings":
@@ -271,27 +373,75 @@ class CitationFormatter:
                 else:
                     bibtex_lines.append(f"  howpublished={{{venue_clean}}},")
             
-            # DOI
-            if paper.doi:
-                bibtex_lines.append(f"  doi={{{paper.doi}}},")
+            # Volume, Number, Pages (if available in venue)
+            if hasattr(paper, 'volume') and paper.volume:
+                bibtex_lines.append(f"  volume={{{paper.volume}}},")
+            if hasattr(paper, 'number') and paper.number:
+                bibtex_lines.append(f"  number={{{paper.number}}},")
+            if hasattr(paper, 'pages') and paper.pages:
+                bibtex_lines.append(f"  pages={{{paper.pages}}},")
+            
+            # DOI with validation
+            if hasattr(paper, 'doi') and paper.doi:
+                if self._validate_doi(paper.doi):
+                    bibtex_lines.append(f"  doi={{{paper.doi}}},")
+                else:
+                    logger.warning(f"Invalid DOI format: {paper.doi}")
             
             # ArXiv ID if available
             if hasattr(paper, 'arxiv_id') and paper.arxiv_id:
                 bibtex_lines.append(f"  archivePrefix={{arXiv}},")
                 bibtex_lines.append(f"  eprint={{{paper.arxiv_id}}},")
+                # Add arXiv primary class if available
+                if hasattr(paper, 'arxiv_category') and paper.arxiv_category:
+                    bibtex_lines.append(f"  primaryClass={{{paper.arxiv_category}}},")
+            
+            # Keywords if available
+            if hasattr(paper, 'keywords') and paper.keywords:
+                keywords_str = ", ".join(paper.keywords[:10])  # Limit to 10 keywords
+                bibtex_lines.append(f"  keywords={{{keywords_str}}},")
+            
+            # Abstract if available and not too long
+            if hasattr(paper, 'abstract') and paper.abstract and len(paper.abstract) < 500:
+                abstract_clean = self._sanitize_text(paper.abstract[:300], 'bibtex')
+                if abstract_clean:
+                    bibtex_lines.append(f"  abstract={{{abstract_clean}...}},")
+            
+            # Publisher if available
+            if hasattr(paper, 'publisher') and paper.publisher:
+                publisher_clean = self._sanitize_text(paper.publisher, 'bibtex')
+                bibtex_lines.append(f"  publisher={{{publisher_clean}}},")
             
             # Citations if significant
-            if paper.citations and paper.citations > 0:
+            if hasattr(paper, 'citations') and paper.citations and paper.citations > 0:
                 bibtex_lines.append(f"  note={{Cited by {paper.citations} papers}},")
             
-            # Source annotation
-            if "openalex" in paper.id:
-                bibtex_lines.append(f"  note={{Retrieved from OpenAlex database}},")
-            elif "crossref" in paper.id:
-                bibtex_lines.append(f"  note={{Retrieved from CrossRef database}},")
+            # Source annotation with enhanced detection
+            source_note = None
+            if hasattr(paper, 'id') and paper.id:
+                if "openalex" in paper.id.lower():
+                    source_note = "Retrieved from OpenAlex database"
+                elif "crossref" in paper.id.lower():
+                    source_note = "Retrieved from CrossRef database"
+                elif "arxiv" in paper.id.lower():
+                    source_note = "Retrieved from arXiv"
+                elif "pubmed" in paper.id.lower():
+                    source_note = "Retrieved from PubMed database"
             
-            # URL (always include)
-            bibtex_lines.append(f"  url={{{paper.url}}}")
+            if source_note:
+                bibtex_lines.append(f"  note={{{source_note}}},")
+            
+            # Month if available
+            if hasattr(paper, 'published_date') and paper.published_date:
+                if hasattr(paper.published_date, 'month'):
+                    month_names = ["", "jan", "feb", "mar", "apr", "may", "jun",
+                                  "jul", "aug", "sep", "oct", "nov", "dec"]
+                    if 1 <= paper.published_date.month <= 12:
+                        bibtex_lines.append(f"  month={{{month_names[paper.published_date.month]}}},")
+            
+            # URL (always include as fallback)
+            if hasattr(paper, 'url') and paper.url:
+                bibtex_lines.append(f"  url={{{paper.url}}}")
             
             bibtex_lines.append("}")
             
@@ -299,8 +449,12 @@ class CitationFormatter:
             
         except Exception as e:
             logger.error(f"Error formatting BibTeX citation: {e}")
-            title_safe = paper.title.replace('{', '\\{').replace('}', '\\}')
-            return f"@misc{{error,\n  title={{{title_safe}}},\n  note={{Error in citation formatting}}\n}}"
+            return self._generate_error_bibtex(citation_key, getattr(paper, 'title', 'Unknown Title'))
+    
+    def _generate_error_bibtex(self, citation_key: str, title: str) -> str:
+        """Generate error BibTeX entry when formatting fails"""
+        title_safe = self._sanitize_text(title, 'bibtex')
+        return f"@misc{{{citation_key},\n  title={{{title_safe}}},\n  note={{Error in citation formatting}}\n}}"
     
     def format_chicago(self, paper: Paper) -> str:
         """Format citation in Chicago style"""
@@ -452,3 +606,175 @@ class CitationFormatter:
                 logger.error(f"Error writing BibTeX file: {e}")
         
         return content
+    
+    def validate_citation_quality(self, paper: Paper) -> Dict[str, Any]:
+        """Assess the quality and completeness of citation data"""
+        quality_score = 100
+        issues = []
+        recommendations = []
+        
+        # Check required fields
+        if not paper.title or len(paper.title.strip()) < 5:
+            quality_score -= 30
+            issues.append("Missing or very short title")
+            recommendations.append("Ensure paper has a descriptive title")
+        
+        if not paper.authors or len(paper.authors) == 0:
+            quality_score -= 25
+            issues.append("No authors specified")
+            recommendations.append("Add author information")
+        elif any(len(author.strip()) < 3 for author in paper.authors):
+            quality_score -= 10
+            issues.append("Some author names are very short")
+            recommendations.append("Verify author name completeness")
+        
+        # Check publication date
+        if not hasattr(paper, 'published_date') or not paper.published_date:
+            quality_score -= 15
+            issues.append("Missing publication date")
+            recommendations.append("Add publication date for accurate citation")
+        elif hasattr(paper, 'published_date') and paper.published_date:
+            try:
+                if hasattr(paper.published_date, 'year'):
+                    year = paper.published_date.year
+                else:
+                    year = int(str(paper.published_date)[:4])
+                current_year = datetime.now().year
+                if year > current_year + 1:
+                    quality_score -= 10
+                    issues.append("Future publication date seems unlikely")
+                elif year < 1800:
+                    quality_score -= 10
+                    issues.append("Very old publication date may be incorrect")
+            except:
+                quality_score -= 5
+                issues.append("Publication date format issue")
+        
+        # Check venue information
+        if not hasattr(paper, 'venue') or not paper.venue:
+            quality_score -= 10
+            issues.append("Missing venue information")
+            recommendations.append("Add journal/conference venue")
+        
+        # Check DOI
+        if hasattr(paper, 'doi') and paper.doi:
+            if not self._validate_doi(paper.doi):
+                quality_score -= 10
+                issues.append("Invalid DOI format")
+                recommendations.append("Verify DOI format (should be 10.xxxx/xxxxx)")
+        else:
+            quality_score -= 5
+            issues.append("Missing DOI")
+            recommendations.append("Add DOI if available for better citation tracking")
+        
+        # Check URL
+        if not hasattr(paper, 'url') or not paper.url:
+            quality_score -= 5
+            issues.append("Missing URL")
+        elif paper.url and not (paper.url.startswith('http://') or paper.url.startswith('https://')):
+            quality_score -= 5
+            issues.append("URL format issue")
+            recommendations.append("Ensure URL starts with http:// or https://")
+        
+        # Assess citation count
+        citation_quality = "unknown"
+        if hasattr(paper, 'citations') and paper.citations is not None:
+            if paper.citations > 100:
+                citation_quality = "highly_cited"
+            elif paper.citations > 10:
+                citation_quality = "well_cited"
+            elif paper.citations > 0:
+                citation_quality = "cited"
+            else:
+                citation_quality = "not_cited"
+        
+        # Overall assessment
+        if quality_score >= 90:
+            overall_quality = "excellent"
+        elif quality_score >= 80:
+            overall_quality = "good"
+        elif quality_score >= 70:
+            overall_quality = "acceptable"
+        elif quality_score >= 60:
+            overall_quality = "poor"
+        else:
+            overall_quality = "very_poor"
+        
+        return {
+            "quality_score": max(0, quality_score),
+            "overall_quality": overall_quality,
+            "citation_impact": citation_quality,
+            "issues": issues,
+            "recommendations": recommendations,
+            "completeness": {
+                "has_title": bool(paper.title),
+                "has_authors": bool(paper.authors),
+                "has_date": bool(getattr(paper, 'published_date', None)),
+                "has_venue": bool(getattr(paper, 'venue', None)),
+                "has_doi": bool(getattr(paper, 'doi', None)),
+                "has_url": bool(getattr(paper, 'url', None))
+            }
+        }
+    
+    def suggest_citation_improvements(self, papers: List[Paper]) -> Dict[str, Any]:
+        """Analyze a collection of papers and suggest improvements"""
+        total_papers = len(papers)
+        if total_papers == 0:
+            return {"error": "No papers provided"}
+        
+        quality_scores = []
+        common_issues = {}
+        
+        for paper in papers:
+            try:
+                quality = self.validate_citation_quality(paper)
+                quality_scores.append(quality['quality_score'])
+                
+                for issue in quality['issues']:
+                    common_issues[issue] = common_issues.get(issue, 0) + 1
+            except Exception as e:
+                logger.error(f"Error analyzing paper {getattr(paper, 'id', 'unknown')}: {e}")
+                continue
+        
+        avg_quality = sum(quality_scores) / len(quality_scores) if quality_scores else 0
+        
+        # Find most common issues
+        sorted_issues = sorted(common_issues.items(), key=lambda x: x[1], reverse=True)
+        top_issues = sorted_issues[:5]
+        
+        return {
+            "total_papers": total_papers,
+            "average_quality_score": round(avg_quality, 2),
+            "quality_distribution": {
+                "excellent": len([s for s in quality_scores if s >= 90]),
+                "good": len([s for s in quality_scores if 80 <= s < 90]),
+                "acceptable": len([s for s in quality_scores if 70 <= s < 80]),
+                "poor": len([s for s in quality_scores if 60 <= s < 70]),
+                "very_poor": len([s for s in quality_scores if s < 60])
+            },
+            "most_common_issues": [{"issue": issue, "count": count, "percentage": round(count/total_papers*100, 1)} 
+                                  for issue, count in top_issues],
+            "recommendations": self._generate_collection_recommendations(avg_quality, top_issues)
+        }
+    
+    def _generate_collection_recommendations(self, avg_quality: float, top_issues: List[tuple]) -> List[str]:
+        """Generate recommendations for improving citation collection quality"""
+        recommendations = []
+        
+        if avg_quality < 70:
+            recommendations.append("Consider reviewing and improving citation data quality before publication")
+        
+        for issue, count in top_issues:
+            if "Missing publication date" in issue and count > 2:
+                recommendations.append("Prioritize adding publication dates - essential for academic citations")
+            elif "No authors specified" in issue and count > 1:
+                recommendations.append("Author information is critical - ensure all papers have author data")
+            elif "Missing DOI" in issue and count > 3:
+                recommendations.append("DOIs improve citation tracking - add when available")
+            elif "Missing venue" in issue and count > 2:
+                recommendations.append("Venue information helps categorize publications properly")
+        
+        if len(recommendations) == 0:
+            recommendations.append("Citation quality is good - consider minor improvements for completeness")
+        
+        return recommendations

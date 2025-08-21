@@ -314,20 +314,36 @@ class CrossRefTool:
             return None
     
     def get_paper_by_doi(self, doi: str) -> Optional[Paper]:
-        """FIXED: Get paper by DOI without problematic select parameter"""
+        """Get paper by DOI with enhanced URL encoding and validation"""
         if not doi or not isinstance(doi, str):
             return None
         
         try:
-            # Clean DOI
+            # Clean and validate DOI
             clean_doi = doi.replace('https://doi.org/', '').replace('http://dx.doi.org/', '').strip()
+            
+            # Remove any spaces or invalid characters
+            clean_doi = clean_doi.replace(' ', '').replace('\n', '').replace('\t', '')
+            
             if not clean_doi:
                 return None
             
-            # FIXED: Use URL without select parameter
-            url = f"{self.base_url}/{clean_doi}"
+            # Validate DOI format
+            import re
+            doi_pattern = re.compile(r'^10\.\d{4,}/[^\s]+$')
+            if not doi_pattern.match(clean_doi):
+                logger.warning(f"Invalid DOI format: {clean_doi}")
+                return None
+            
+            # URL encode the DOI to handle special characters
+            from urllib.parse import quote
+            encoded_doi = quote(clean_doi, safe='10./')
+            
+            # Build URL with proper encoding
+            url = f"{self.base_url}/{encoded_doi}"
             params = {}  # No parameters to avoid 400 errors
             
+            logger.debug(f"Making CrossRef request to: {url}")
             data = self._make_request(url, params)
             
             if data and 'message' in data:

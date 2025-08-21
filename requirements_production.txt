@@ -1,22 +1,72 @@
 # Production Requirements for Academic Research Assistant
-streamlit>=1.28.0
-pandas>=1.5.0
-numpy>=1.21.0
-plotly>=5.0.0
-requests>=2.25.0
-pydantic>=1.8.0
-python-dotenv>=0.19.0
-aiosqlite>=0.17.0
-crewai>=0.1.0
-google-generativeai>=0.3.0
-openai>=1.0.0
-sentence-transformers>=2.2.0
-scikit-learn>=1.1.0
-nltk>=3.7
-beautifulsoup4>=4.11.0
-lxml>=4.9.0
-python-dateutil>=2.8.0
-pyyaml>=6.0
-typing-extensions>=4.0.0
-asyncio>=3.4.0
-concurrent-futures>=3.1.0
+
+# Core web framework and UI
+streamlit
+pandas
+numpy
+plotly
+
+# HTTP and API clients
+requests
+aiohttp
+httpx
+
+# Data validation and models
+pydantic
+
+# Configuration and environment
+python-dotenv
+pyyaml
+
+# Database
+aiosqlite
+sqlite-utils
+
+# AI and ML frameworks
+crewai
+google-generativeai
+openai
+torch
+sentence-transformers
+scikit-learn
+rank-bm25
+
+# Natural language processing
+nltk
+
+# Web scraping and parsing
+beautifulsoup4
+lxml
+
+# Date and time utilities
+python-dateutil
+
+# Type system extensions
+typing-extensions
+
+# Academic paper processing
+arxiv
+bibtexparser
+
+# PDF processing
+PyPDF2
+pdfplumber
+
+# Export formats
+reportlab
+python-docx
+pdfkit
+jinja2
+
+# System monitoring and utilities
+psutil
+
+# Retry and resilience
+tenacity
+backoff
+
+# Rich terminal output
+rich
+
+# Command line interface
+click
