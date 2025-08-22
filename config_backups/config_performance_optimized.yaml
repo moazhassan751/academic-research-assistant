@@ -1,0 +1,139 @@
+# Academic Research Assistant Configuration
+# Configuration matching expected schema for config.py
+
+# Storage Configuration
+storage:
+  database_path: "data/research.db"
+  papers_dir: "data/papers"
+  cache_dir: "data/cache"
+  outputs_dir: "data/outputs"
+
+# API Configuration
+apis:
+  openalex:
+    base_url: "https://api.openalex.org/works"
+    rate_limit: 10
+    timeout: 30
+    user_agent: "AcademicResearchAssistant/1.0 (mailto:rmoazhassan555@gmail.com)"
+    
+  crossref:
+    base_url: "https://api.crossref.org/works"
+    rate_limit: 50
+    timeout: 30
+    mailto: "rmoazhassan555@gmail.com"
+    
+  arxiv:
+    base_url: "http://export.arxiv.org/api/query"
+    rate_limit: 3
+    timeout: 30
+    max_results: 100
+    delay: 3
+
+# LLM Configuration  
+llm:
+  development:
+    provider: "gemini"
+    model: "gemini-2.5-flash"
+    temperature: 0.1
+    max_tokens: 2048
+    max_retries: 3
+    request_timeout: 60
+    safety_settings:
+      harassment: "BLOCK_ONLY_HIGH"
+      hate_speech: "BLOCK_ONLY_HIGH" 
+      sexually_explicit: "BLOCK_ONLY_HIGH"
+      dangerous_content: "BLOCK_MEDIUM_AND_ABOVE"
+    content_filtering:
+      enable_academic_mode: true
+      sanitize_prompts: true
+      use_academic_framing: true
+  production:
+    provider: "gemini"
+    model: "gemini-2.5-flash"
+    temperature: 0.1
+    max_tokens: 2048
+    max_retries: 3
+    request_timeout: 60
+    safety_settings:
+      harassment: "BLOCK_ONLY_HIGH"
+      hate_speech: "BLOCK_ONLY_HIGH" 
+      sexually_explicit: "BLOCK_ONLY_HIGH"
+      dangerous_content: "BLOCK_MEDIUM_AND_ABOVE"
+    content_filtering:
+      enable_academic_mode: true
+      sanitize_prompts: true
+      use_academic_framing: true
+  
+# Logging Configuration
+logging:
+  level: "INFO"
+  file: "logs/research_assistant.log"
+  max_file_size: "10MB"
+  backup_count: 5
+
+# Research Configuration
+research:
+  max_papers_default: 5
+  max_retries: 3
+  min_confidence_threshold: 0.5
+  deduplication:
+    doi_priority: true
+    title_similarity_threshold: 0.85
+    author_match_threshold: 0.7
+  default_search_providers: ["openalex", "crossref", "semantic_scholar"]
+  concurrent_requests: 2
+  search_timeout: 120
+  note_confidence_threshold: 0.5
+  theme_frequency_threshold: 3
+
+# Export Configuration
+export:
+  output_directory: "data/outputs"
+  default_formats: ["pdf", "docx"]
+  pdf_settings:
+    page_size: "A4"
+    margin: "1in"
+    font_size: 12
+  docx_settings:
+    font_name: "Calibri"
+    font_size: 11
+  max_file_size: 104857600
+
+# Security Configuration
+security:
+  api_key_encryption: true
+  ssl_verify: true
+  request_timeout: 30
+  max_request_size: 10485760
+  allowed_domains:
+    - "api.openalex.org"
+    - "api.crossref.org"
+    - "api.semanticscholar.org"
+    - "export.arxiv.org"
+    - "generativelanguage.googleapis.com"
+
+# Export Configuration
+export:
+  output_directory: "data/outputs"
+  default_formats: ["pdf", "docx"]
+  pdf_settings:
+    page_size: "A4"
+    margin: "1in"
+    font_size: 12
+  docx_settings:
+    font_name: "Calibri"
+    font_size: 11
+  max_file_size: 104857600
+
+# Security Configuration
+security:
+  api_key_encryption: true
+  ssl_verify: true
+  request_timeout: 30
+  max_request_size: 10485760
+  allowed_domains:
+    - "api.openalex.org"
+    - "api.crossref.org"
+    - "api.semanticscholar.org"
+    - "export.arxiv.org"
+    - "generativelanguage.googleapis.com"

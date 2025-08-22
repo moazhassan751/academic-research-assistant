@@ -1,0 +1,10 @@
+{
+  "demo_mode": true,
+  "fast_processing": true,
+  "reduced_papers": 3,
+  "quick_timeout": 20,
+  "batch_size": 3,
+  "max_concurrent": 1,
+  "enable_caching": true,
+  "skip_heavy_processing": false
+}
