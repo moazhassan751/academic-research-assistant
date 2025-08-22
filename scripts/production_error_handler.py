@@ -20,6 +20,10 @@ class ProductionErrorHandler:
     
     def setup_logging(self):
         """Setup production logging"""
+        # Ensure logs directory exists
+        import os
+        os.makedirs('logs', exist_ok=True)
+        
         logging.basicConfig(
             level=logging.INFO,
             format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
