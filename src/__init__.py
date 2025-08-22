@@ -1,22 +1,17 @@
 """
-Academic Research Assistant - Core Package
-
-A comprehensive AI-powered multi-agent system for academic research.
+Academic Research Assistant - Optimized Init
 """
 
-__version__ = "2.1.0"
-__author__ = "Academic Research Assistant Team"
-__description__ = "AI-powered multi-agent system for academic research automation"
+# Lazy loading optimization - only import when needed
+def get_research_crew():
+    from .crew import ResearchCrew
+    return ResearchCrew
 
-# Import main components for easy access
-from .agents import *
-from .crew import *
-from .storage import *
-from .tools import *
-from .utils import *
+def get_export_manager():
+    from .utils.export_manager import export_manager
+    return export_manager
 
-__all__ = [
-    "__version__",
-    "__author__",
-    "__description__",
-]
+# Core components for immediate use
+from .utils.logging import logger
+
+# Note: Other components loaded on-demand for better performance
