@@ -13,6 +13,19 @@ from ..agents.qa_agent import QuestionAnsweringAgent
 from ..storage.database import db
 from ..utils.logging import logger
 from ..utils.config import config
+
+# Safe performance optimization (can be disabled if needed)
+try:
+    from ..utils.performance_patch import (
+        get_optimized_batch_delay, 
+        get_optimized_arxiv_delay, 
+        get_smart_api_cooldown
+    )
+    PERFORMANCE_OPTIMIZATIONS_ENABLED = True
+    logger.info("Performance optimizations loaded successfully")
+except ImportError:
+    PERFORMANCE_OPTIMIZATIONS_ENABLED = False
+    logger.info("Using standard delays (performance optimizations not available)")
 from ..utils.export_manager import export_manager
 from ..utils.performance_optimizer import optimizer, ultra_cache, turbo_batch_processor
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
@@ -169,8 +182,15 @@ class UltraFastResearchCrew:
             # Apply cooldown for API-related errors
             error_msg = str(e).lower()
             if any(keyword in error_msg for keyword in ['timeout', '503', 'unavailable', 'quota', 'rate']):
-                logger.info(f"API-related error detected, applying cooldown of {self.api_cooldown_time} seconds")
-                time.sleep(self.api_cooldown_time)
+                # Use smart cooldown if optimizations available
+                if PERFORMANCE_OPTIMIZATIONS_ENABLED:
+                    cooldown_time = get_smart_api_cooldown(error_msg)
+                    logger.info(f">> Smart API cooldown: {cooldown_time} seconds for error type")
+                else:
+                    cooldown_time = self.api_cooldown_time
+                    logger.info(f"API-related error detected, applying cooldown of {cooldown_time} seconds")
+                
+                time.sleep(cooldown_time)
             
             raise
     
@@ -225,8 +245,14 @@ class UltraFastResearchCrew:
                 
                 # Add delay between batches to respect rate limits
                 if batch_num < total_batches:
-                    delay = min(30, 10 * batch_num)  # Progressive delay
-                    logger.debug(f"Waiting {delay} seconds before next batch")
+                    # Use optimized delays if available, otherwise fall back to original
+                    if PERFORMANCE_OPTIMIZATIONS_ENABLED:
+                        delay = get_optimized_batch_delay(batch_num, total_batches)
+                        logger.debug(f">> Optimized delay: {delay} seconds before next batch")
+                    else:
+                        delay = min(30, 10 * batch_num)  # Original progressive delay
+                        logger.debug(f"Waiting {delay} seconds before next batch")
+                    
                     time.sleep(delay)
                 
             except Exception as e:
@@ -1103,11 +1129,11 @@ class UltraFastResearchCrew:
                     session_results['total_questions'] += 1
                     
                     # Display results (in a real implementation, this would be formatted nicely)
-                    print(f"\n🔍 Answer (Confidence: {answer_result.get('confidence', 0):.2f}):")
+                    print(f"\n>> Answer (Confidence: {answer_result.get('confidence', 0):.2f}):")
                     print(answer_result.get('answer', 'No answer available'))
                     
                     if answer_result.get('follow_up_questions'):
-                        print(f"\n💡 Follow-up questions you might ask:")
+                        print(f"\n>> Follow-up questions you might ask:")
                         for i, fq in enumerate(answer_result['follow_up_questions'], 1):
                             print(f"   {i}. {fq}")
                     

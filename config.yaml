@@ -34,7 +34,7 @@ llm:
   development:
     provider: "gemini"
     model: "gemini-2.5-flash"
-    temperature: 0.1
+    temperature: 0.05
     max_tokens: 4096
     max_retries: 3
     request_timeout: 60
@@ -50,7 +50,7 @@ llm:
   production:
     provider: "gemini"
     model: "gemini-2.5-flash"
-    temperature: 0.1
+    temperature: 0.05
     max_tokens: 4096
     max_retries: 3
     request_timeout: 60
@@ -73,7 +73,7 @@ logging:
 
 # Research Configuration
 research:
-  max_papers_default: 50
+  max_papers_default: 5
   max_retries: 3
   min_confidence_threshold: 0.5
   deduplication:

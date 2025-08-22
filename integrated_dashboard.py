@@ -18,7 +18,7 @@ sys.path.insert(0, str(project_root))
 
 # Import production error handling first
 try:
-    from production_error_handler import production_handler, production_safe, validate_inputs, safe_data_access
+    from scripts.production_error_handler import production_handler, production_safe, validate_inputs, safe_data_access
     PRODUCTION_ERROR_HANDLING = True
 except ImportError:
     PRODUCTION_ERROR_HANDLING = False
@@ -34,15 +34,24 @@ try:
     EXPORT_MANAGER_AVAILABLE = True
 except ImportError:
     try:
-        from simple_export_manager import export_manager
+        from src.simple_export_manager import export_manager
         EXPORT_MANAGER_AVAILABLE = True
     except ImportError:
         EXPORT_MANAGER_AVAILABLE = False
         export_manager = None
 
+# Try to import streamlit download helper (safe addition)
+try:
+    from src.utils.streamlit_downloads import StreamlitDownloadHelper, add_download_buttons
+    STREAMLIT_DOWNLOADS_AVAILABLE = True
+except ImportError:
+    STREAMLIT_DOWNLOADS_AVAILABLE = False
+    StreamlitDownloadHelper = None
+    add_download_buttons = None
+
 # Import performance monitoring
 try:
-    from dashboard_performance import (
+    from scripts.dashboard_performance import (
         performance_monitor, 
         with_performance_tracking, 
         show_performance_sidebar
@@ -54,7 +63,7 @@ except ImportError:
 
 # Import professional error handling
 try:
-    from professional_error_handler import (
+    from scripts.professional_error_handler import (
         error_handler,
         safe_execute,
         validate_inputs,
@@ -1749,10 +1758,10 @@ def main():
                 
                 max_papers = st.slider(
                     "📚 Maximum Papers to Analyze",
-                    min_value=10,
+                    min_value=5,
                     max_value=500,
                     value=100,
-                    step=10,
+                    step=5,
                     help="Higher numbers provide more comprehensive results but take longer to process"
                 )
                 
@@ -2962,6 +2971,25 @@ def main():
                             st.success(f"🎉 Paper exported successfully!", icon="✅")
                             st.info(f"📁 **Location:** `{output_path}.{paper_format}`")
                             
+                            # NEW: Add download buttons (safe addition)
+                            if STREAMLIT_DOWNLOADS_AVAILABLE and export_manager:
+                                try:
+                                    st.markdown("---")
+                                    st.subheader("💾 Download Options")
+                                    
+                                    # Create download helper
+                                    download_helper = StreamlitDownloadHelper(export_manager)
+                                    
+                                    # Add download buttons for different formats
+                                    col1, col2 = st.columns(2)
+                                    with col1:
+                                        download_helper.create_download_button_pdf(results['draft'])
+                                    with col2:
+                                        download_helper.create_download_button_docx(results['draft'])
+                                        
+                                except Exception as download_error:
+                                    st.warning(f"⚠️ Download buttons unavailable: {download_error}")
+                            
                             # File details
                             try:
                                 file_path = f"{output_path}.{paper_format}"
@@ -3233,6 +3261,33 @@ This research analysis provides comprehensive insights into the current state of
                         if success:
                             st.success(f"🎉 Bibliography exported successfully!", icon="✅")
                             st.info(f"📁 **Location:** `{output_path}.{bib_format}`")
+                            
+                            # NEW: Add bibliography download buttons (safe addition)
+                            if STREAMLIT_DOWNLOADS_AVAILABLE and export_manager and bibliography_text:
+                                try:
+                                    st.markdown("---")
+                                    st.subheader("💾 Download Bibliography")
+                                    
+                                    # Create download helper
+                                    download_helper = StreamlitDownloadHelper(export_manager)
+                                    
+                                    # Add download buttons for different bibliography formats
+                                    col1, col2, col3 = st.columns(3)
+                                    with col1:
+                                        download_helper.create_download_button_bibliography(
+                                            bibliography_text, references, "bibtex"
+                                        )
+                                    with col2:
+                                        download_helper.create_download_button_bibliography(
+                                            bibliography_text, references, "ris"
+                                        )
+                                    with col3:
+                                        download_helper.create_download_button_bibliography(
+                                            bibliography_text, references, "csv"
+                                        )
+                                        
+                                except Exception as download_error:
+                                    st.warning(f"⚠️ Bibliography download buttons unavailable: {download_error}")
                         else:
                             st.error("❌ Failed to export bibliography")
                             

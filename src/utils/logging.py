@@ -10,6 +10,15 @@ from typing import Dict, Any, Optional
 from rich.logging import RichHandler
 from rich.console import Console
 
+# Fix Windows encoding issues
+if sys.platform.startswith('win'):
+    import codecs
+    # Ensure proper UTF-8 encoding for Windows
+    if hasattr(sys.stdout, 'reconfigure'):
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    if hasattr(sys.stderr, 'reconfigure'):
+        sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+
 
 class StructuredFormatter(logging.Formatter):
     """Custom formatter for structured logging with JSON output"""

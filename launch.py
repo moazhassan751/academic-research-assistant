@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 import sys
-
 import os
 import subprocess
 import time
@@ -8,6 +7,13 @@ import argparse
 import webbrowser
 from pathlib import Path
 from datetime import datetime
+
+# Fix Windows encoding issues
+if sys.platform.startswith('win'):
+    if hasattr(sys.stdout, 'reconfigure'):
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    if hasattr(sys.stderr, 'reconfigure'):
+        sys.stderr.reconfigure(encoding='utf-8', errors='replace')
 
 # Add src to Python path for imports
 sys.path.insert(0, str(Path(__file__).parent / "src"))
@@ -121,7 +127,7 @@ class AcademicResearchLauncher:
             port = self.ports['health']
             cmd = [
                 sys.executable, "-m", "streamlit", "run",
-                str(self.project_root / "utils" / "dashboard_health_check.py"),
+                str(self.project_root / "scripts" / "dashboard_health_check.py"),
                 "--server.port", str(port),
                 "--server.headless", "false",
                 "--server.runOnSave", "false",

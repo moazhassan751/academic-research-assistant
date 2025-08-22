@@ -59,7 +59,7 @@ class Config:
                 }
             },
             'research': {
-                'max_papers_default': 50,
+                'max_papers_default': 5,
                 'max_retries': 3,
                 'min_confidence_threshold': 0.5,
                 'deduplication': {
@@ -210,9 +210,9 @@ class Config:
     def max_papers_default(self) -> int:
         """Get default maximum papers setting"""
         try:
-            return int(os.getenv('MAX_PAPERS_DEFAULT', self.get('research.max_papers_default', 50)))
+            return int(os.getenv('MAX_PAPERS_DEFAULT', self.get('research.max_papers_default', 5)))
         except (ValueError, TypeError):
-            return 50
+            return 5
     
     @property
     def request_timeout(self) -> int:
@@ -313,7 +313,7 @@ class Config:
     def get_research_config(self) -> Dict[str, Any]:
         """Get complete research configuration"""
         return self.get('research', {
-            'max_papers_default': 50,
+            'max_papers_default': 5,
             'max_retries': 3,
             'min_confidence_threshold': 0.5,
             'deduplication': {
