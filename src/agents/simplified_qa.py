@@ -6,7 +6,7 @@ from typing import Dict, List, Any, Optional
 from ..storage.database import db
 from ..utils.config import config
 from ..llm.gemini_client import GeminiClient
-from ..utils.logging import logger
+from ..utils.app_logging import logger
 
 class SimplifiedQAAgent:
     """Simplified QA Agent without complex async operations"""

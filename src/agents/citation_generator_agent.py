@@ -5,7 +5,7 @@ from ..storage.database import db
 from ..tools.citation_formatter import CitationFormatter
 from ..tools.Cross_Ref_tool import CrossRefTool
 from ..llm.llm_factory import LLMFactory
-from ..utils.logging import logger
+from ..utils.app_logging import logger
 
 class CitationGeneratorAgent:
     def __init__(self):

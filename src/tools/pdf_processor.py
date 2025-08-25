@@ -6,7 +6,7 @@ from typing import Optional, Dict, Any, List, Tuple
 import hashlib
 import mimetypes
 from ..utils.config import config
-from ..utils.logging import logger
+from ..utils.app_logging import logger
 
 class PDFProcessor:
     def __init__(self):

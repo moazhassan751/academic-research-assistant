@@ -14,7 +14,7 @@ import json
 
 from .models import Paper, ResearchNote, ResearchTheme, Citation
 from ..utils.config import config
-from ..utils.logging import logger
+from ..utils.app_logging import logger
 from ..utils.database_optimizer import EnhancedDatabaseOptimizer
 from ..utils.performance_optimizer import optimizer, ultra_cache, turbo_batch_processor
 

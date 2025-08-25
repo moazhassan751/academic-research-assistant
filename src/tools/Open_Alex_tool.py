@@ -10,7 +10,7 @@ from urllib.parse import quote_plus
 from concurrent.futures import ThreadPoolExecutor
 from collections import defaultdict
 from ..storage.models import Paper
-from ..utils.logging import logger
+from ..utils.app_logging import logger
 from ..utils.config import config
 from ..utils.performance_optimizer import optimizer, ultra_cache, turbo_batch_processor
 

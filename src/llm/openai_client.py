@@ -1,7 +1,7 @@
 import openai
 from typing import Optional
 from tenacity import retry, stop_after_attempt, wait_exponential
-from ..utils.logging import logger
+from ..utils.app_logging import logger
 
 class OpenAIClient:
     def __init__(self, api_key: str, model: str = "gpt-4-turbo",

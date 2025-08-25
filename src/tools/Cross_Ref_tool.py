@@ -4,7 +4,7 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime
 from urllib.parse import quote_plus, urlencode
 from ..storage.models import Paper
-from ..utils.logging import logger
+from ..utils.app_logging import logger
 from ..utils.config import config
 
 class CrossRefTool:

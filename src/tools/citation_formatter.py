@@ -2,7 +2,7 @@ import re
 from typing import Dict, Any, Optional, List, Union
 from datetime import datetime
 from ..storage.models import Paper, Citation
-from ..utils.logging import logger
+from ..utils.app_logging import logger
 
 class CitationFormatter:
     def __init__(self):

@@ -14,7 +14,7 @@ import numpy as np
 from ..storage.models import Paper
 from ..storage.database import db, get_async_db_manager
 from ..llm.llm_factory import LLMFactory
-from ..utils.logging import logger
+from ..utils.app_logging import logger
 from ..utils.performance_optimizer import optimizer, ultra_cache, turbo_batch_processor, fast_text
 
 # Try to import advanced NLP libraries with fallbacks

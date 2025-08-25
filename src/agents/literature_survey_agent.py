@@ -17,7 +17,7 @@ from ..tools.Cross_Ref_tool import CrossRefTool
 from ..storage.models import Paper
 from ..storage.database import db
 from ..llm.llm_factory import LLMFactory
-from ..utils.logging import logger
+from ..utils.app_logging import logger
 from ..utils.performance_optimizer import optimizer, ultra_cache, turbo_batch_processor, smart_parallel_executor, fast_text
 
 

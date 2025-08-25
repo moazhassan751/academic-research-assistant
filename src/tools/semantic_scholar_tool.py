@@ -4,7 +4,7 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime
 from ..storage.models import Paper
 from ..utils.config import config
-from ..utils.logging import logger
+from ..utils.app_logging import logger
 
 class SemanticScholarTool:
     def __init__(self):

@@ -11,7 +11,7 @@ from typing import Dict, Any, Optional, List
 import time
 from dataclasses import dataclass, asdict
 
-from ..utils.logging import logger
+from ..utils.app_logging import logger
 
 @dataclass
 class PerformanceConfig:

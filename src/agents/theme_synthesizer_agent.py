@@ -6,7 +6,7 @@ import re
 from ..storage.models import ResearchNote, ResearchTheme
 from ..storage.database import db
 from ..llm.llm_factory import LLMFactory
-from ..utils.logging import logger
+from ..utils.app_logging import logger
 
 class ThemeSynthesizerAgent:
     def __init__(self):

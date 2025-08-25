@@ -11,7 +11,7 @@ from ..agents.draft_writer_agent import DraftWriterAgent
 from ..agents.citation_generator_agent import CitationGeneratorAgent
 from ..agents.qa_agent import QuestionAnsweringAgent
 from ..storage.database import db
-from ..utils.logging import logger
+from ..utils.app_logging import logger
 from ..utils.config import config
 
 # Safe performance optimization (can be disabled if needed)
